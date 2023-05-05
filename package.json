@@ -1,0 +1,29 @@
+{
+  "name": "tx-tool-logic",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node src/app.js",
+    "build" : "netlify deploy --prod"
+  },
+  "author": "",
+  "license": "ISC",
+  "keywords": [],
+  "description": "",
+  "dependencies": {
+    "@moralisweb3/common-evm-utils": "^2.19.0",
+    "axios": "^1.4.0",
+    "ethers": "^6.3.0",
+    "exceljs": "^4.3.0",
+    "express": "^4.18.2",
+    "moment": "^2.29.4",
+    "moralis": "^2.19.0",
+    "netlify-lambda": "^2.0.16",
+    "serverless-http": "^3.2.0",
+    "web3": "^1.9.0"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.22"
+  }
+}
