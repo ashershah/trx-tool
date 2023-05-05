@@ -10,7 +10,7 @@ const axios = require("axios");
 var fs = require("fs");
 const API_KEY = "BQYwKrt1vg9lUe2b5Dz1tSz2rkBjQsll";
 const API_URL = `https://graphql.bitquery.io/`;
-app.get("/bitquerry", async (req, res) => {
+app.get("/walletTrx", async (req, res) => {
   const { address, from, to } = req.query;
   console.log("add", address);
   const query = `
