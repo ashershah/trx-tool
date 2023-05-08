@@ -149,6 +149,6 @@ app.get("/walletTrx", async (req, res) => {
   }
 });
 
-app.listen(3000, () => {
+app.listen(3002, () => {
   console.log("Server started on port 3000");
 });
