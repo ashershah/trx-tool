@@ -18,10 +18,12 @@ app.get("/walletTrx", async (req, res) => {
     ethereum(network: ethereum) {
       dexTrades(
         options: {desc: "block.height"}
-        makerOrTaker: {is: "${address}"}
-        exchangeName: {in: ["Uniswap", "Uniswap v2" , "Uniswap v3"]}
+        exchangeName: {in: ["Uniswap", "Uniswap v2", "Uniswap v3"]}
+        txSender: {is:  "${address}"}
         date: {since: ${from}, till: ${to}}
-        ) {
+
+      )
+     {
         transaction {
           hash
         }
@@ -69,6 +71,22 @@ app.get("/walletTrx", async (req, res) => {
           gasValue
           gas
         }
+        timeInterval {
+          day
+          hour
+          minute
+          second
+        }
+        quoteCurrency {
+          name
+          symbol
+          decimals
+        }
+        baseCurrency {
+          name
+          symbol
+          decimals
+        }
       }
     }
   }
@@ -108,11 +126,12 @@ app.get("/walletTrx", async (req, res) => {
 
       // let counter = 1;
       response.data.data.ethereum.dexTrades.forEach((trx) => {
-        trx.timestamp = moment(trx.block.timestamp).format("YYYY-MM-DD hh:mm");
+        console.log(trx.quoteCurrency.symbol)
+        trx.timestamp = moment(trx.timeInterval.second).format("YYYY-MM-DD hh:mm:ss");
         trx.fee = trx.transaction.gasValue;
         trx.symbol = trx.sellCurrency.symbol;
         trx.buyCurrencySymbol = trx.buyCurrency.symbol;
-        trx.type = trx.sellCurrency.symbol = "WETH" ? "BUY" : "SELL";
+        trx.type = trx.quoteCurrency.symbol == "WETH" ? "SELL" : "BUY";
         trx.hash = trx.transaction.hash;
         worksheet.addRow(trx); // Add data in worksheet
       });
