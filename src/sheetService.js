@@ -85,7 +85,6 @@ const sheetService = async (
       }
 
       transactions(
-        success: false
         txSender: {is:  "${address}"}
         date: {since: ${from}, till: ${to}}
               ) {
