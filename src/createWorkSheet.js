@@ -4,7 +4,7 @@ const API_KEY = "BQYwKrt1vg9lUe2b5Dz1tSz2rkBjQsll";
 const API_URL = `https://graphql.bitquery.io/`;
 var fs = require("fs");
 const excelJS = require("exceljs");
-const {sheetService} = require("./sheetService")
+const {sheetService,writeSheet} = require("./sheetService")
 
 const createWorkSheet = async (req, res, next) => {
   const { address, from, to } = req.query;
@@ -20,64 +20,22 @@ const createWorkSheet = async (req, res, next) => {
 
 
     if (result.data) {
-      const worksheet = workbook.addWorksheet(`wallet-${add}`); // New Worksheet
-      // Column for data in excel. key must match data key
-      worksheet.columns = [
-        { header: "Timestamp", key: "timestamp", width: 20 },
-        { header: "Transaction Hash", key: "hash", width: 80 },
-        { header: "Fee (WETH)", key: "fee", width: 20 },
-        { header: "Type", key: "type", width: 15 },
-        { header: "In Token", key: "buyCurrencySymbol", width: 20 },
-        { header: "In Amount", key: "buyAmount", width: 20 },
-        { header: "Out Token", key: "symbol", width: 20 },
-        { header: "Out Amount", key: "sellAmount", width: 20 },
-        { header: "Error in case of failed transaction", key: "error", width: 30
-      
-      },
-      ];
+      const walletTrxSheet = workbook.addWorksheet(`wallet-${add}`); 
+      const walletProfitSheet = workbook.addWorksheet(`wallet-Token-${add}`);
 
-      result?.data?.forEach((trx) => {
-        // console.log(trx.block.timestamp)
-        trx.timestamp = moment(trx?.block?.timestamp?.iso8601).format("YYYY-MM-DD hh:mm:ss");
-        trx.fee = trx?.transaction?.gasValue || trx.gasValue;
-        trx.symbol = trx?.sellCurrency?.symbol;
-        trx.buyCurrencySymbol = trx?.buyCurrency?.symbol;
-        trx.type = trx?.quoteCurrency?.symbol ? trx?.quoteCurrency?.symbol == "WETH" ? "SELL" : "BUY" : "";
-        trx.hash = trx?.transaction?.hash ||  trx.hash;
-        trx.error = trx?.error;
-        worksheet.addRow(trx); // Add data in worksheet
+      const res = await writeSheet( walletTrxSheet, walletProfitSheet,result.data );
+      console.log("result of write sheet",res)
 
-      });
-
-
-      const columnIndex = 9; 
-
-      // Iterate through each row and set the font color of the specified column to red
-      worksheet.eachRow((row, rowNumber) => {
-        const cell = row.getCell(columnIndex);
-        cell.font = { color: { argb: 'FF0000' },bold:true ,size: 13 };
-      });
-  
-      // Making first line in excel bold
-      worksheet.getRow(1).eachCell((cell) => {
-        cell.font = { bold: true,size: 13 };
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'fcd703' } };
-
-
-      });
-
-      
       try {
-       await workbook.xlsx.writeFile(`${path}/history.xlsx`);
-        console.log("succesful");
 
-        // fileStream.on("close", () => {});
-      } catch (err) {
-        res.send({
-          status: "error",
-          message: "Something went wrong",
-        });
-      }
+        await workbook.xlsx.writeFile(`${path}/history.xlsx`);
+         console.log("succesful");
+   
+         // fileStream.on("close", () => {});
+       } catch (err) {
+        console.log(err)
+       }
+   
     }
 
  }
