@@ -122,12 +122,12 @@ const sheetService = async (address, from, to, result = {}) => {
     if (response?.data?.data?.ethereum?.dexTrades) {
       // const uniqueData = _.uniqBy(response?.data?.data?.ethereum?.dexTrades, 'transaction.hash');
 
-      // console.log("data",uniqueData);
-      result.data = [
+    
+      result.data = _.sortBy([
         // ...uniqueData,
         ...response?.data?.data?.ethereum?.dexTrades,
         ...response?.data?.data?.ethereum?.transactions,
-      ];
+      ], [(o) => -new Date(o?.block?.timestamp?.iso8601)])
     }
   } catch (ex) {
     thor
