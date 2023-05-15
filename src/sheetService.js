@@ -4,7 +4,7 @@ const API_KEY = "BQYwKrt1vg9lUe2b5Dz1tSz2rkBjQsll";
 const API_URL = `https://graphql.bitquery.io/`;
 var fs = require("fs");
 const excelJS = require("exceljs");
-const _ = require('lodash')
+const _ = require("lodash");
 
 const sheetService = async (address, from, to, result = {}) => {
   console.log("sheet Service");
@@ -120,17 +120,27 @@ const sheetService = async (address, from, to, result = {}) => {
     console.log("respose", response?.data?.data?.ethereum?.dexTrade);
 
     if (response?.data?.data?.ethereum?.dexTrades) {
-      // const uniqueData = _.uniqBy(response?.data?.data?.ethereum?.dexTrades, 'transaction.hash');
+      const uniqueData = _.filter(
+        response?.data?.data?.ethereum?.dexTrades,
+        (trx) =>
+          (trx.sellCurrency.symbol === "WETH" &&
+            trx.quoteCurrency.symbol === "WETH") ||
+          (trx.baseCurrency.symbol === "WETH" &&
+            trx.buyCurrency.symbol === "WETH")
+      );
+      console.log("unique", uniqueData);
 
-    
-      result.data = _.sortBy([
-        // ...uniqueData,
-        ...response?.data?.data?.ethereum?.dexTrades,
-        ...response?.data?.data?.ethereum?.transactions,
-      ], [(o) => -new Date(o?.block?.timestamp?.iso8601)])
+      result.data = _.sortBy(
+        [
+          ...uniqueData,
+          // ...response?.data?.data?.ethereum?.dexTrades,
+          ...response?.data?.data?.ethereum?.transactions,
+        ],
+        [(o) => -new Date(o?.block?.timestamp?.iso8601)]
+      );
     }
   } catch (ex) {
-    thor
+    thor;
     result.ex = ex;
     console.error(ex);
   } finally {
@@ -138,7 +148,12 @@ const sheetService = async (address, from, to, result = {}) => {
   }
 };
 
-const writeSheet = async (walletTrxSheet, walletProfitSheet,data, result = {}) => {
+const writeSheet = async (
+  walletTrxSheet,
+  walletProfitSheet,
+  data,
+  result = {}
+) => {
   console.log("write sheet");
 
   try {
@@ -148,9 +163,9 @@ const writeSheet = async (walletTrxSheet, walletProfitSheet,data, result = {}) =
       { header: "Fee (WETH)", key: "fee", width: 20 },
       { header: "Type", key: "type", width: 15 },
       { header: "In Token", key: "inToken", width: 20 },
-      { header: "In Amount", key: "buyAmount", width: 20 },
+      { header: "In Amount", key: "sellAmount", width: 20 },
       { header: "Out Token", key: "outToken", width: 20 },
-      { header: "Out Amount", key: "sellAmount", width: 20 },
+      { header: "Out Amount", key: "buyAmount", width: 20 },
       {
         header: "Error in case of failed transaction",
         key: "error",
@@ -162,11 +177,20 @@ const writeSheet = async (walletTrxSheet, walletProfitSheet,data, result = {}) =
       { header: "Amount in token", key: "inAmount", width: 20 },
       { header: "Amount out token", key: "outAmout", width: 20 },
       { header: "Token Remaining", key: "tokenRemaining", width: 15 },
+      { header: "WETH In", key: "wethIn", width: 15 },
+      { header: "WETH Out", key: "wethOut", width: 15 },
+      { header: "Avg Sell Price", key: "avgSellPrice", width: 15 },
+      { header: "Fee", key: "fees", width: 15 },
+      { header: "Profit ETH", key: "profitEth", width: 15 },
     ];
-    let modifyData=[];
-    
-    data?.forEach((trx) => {       
-      console.log( trx?.quoteCurrency?.symbol,trx?.baseCurrency?.symbol ,trx?.quoteCurrency?.symbol == "WETH" ? "SELL" : "BUY")
+    let modifyData = [];
+
+    data?.forEach((trx) => {
+      console.log(
+        trx?.quoteCurrency?.symbol,
+        trx?.baseCurrency?.symbol,
+        trx?.quoteCurrency?.symbol == "WETH" ? "SELL" : "BUY"
+      );
       trx.timestamp = moment(trx?.block?.timestamp?.iso8601).format(
         "YYYY-MM-DD hh:mm:ss"
       );
@@ -174,35 +198,65 @@ const writeSheet = async (walletTrxSheet, walletProfitSheet,data, result = {}) =
       trx.outToken = trx?.baseCurrency?.symbol;
       trx.inToken = trx?.quoteCurrency?.symbol;
       trx.type = trx?.quoteCurrency?.symbol
-        ? trx?.quoteCurrency?.symbol && trx?.sellCurrency?.symbol== "WETH"
+        ? trx?.quoteCurrency?.symbol && trx?.sellCurrency?.symbol == "WETH"
           ? "SELL"
           : "BUY"
         : "";
       trx.hash = trx?.transaction?.hash || trx.hash;
       trx.error = trx?.error;
-      modifyData.push(trx)
+      modifyData.push(trx);
     });
-    // console.log("11111modifydata",modifyData)
+    console.log("11111modifydata", modifyData);
 
-    const uniqueSell = _.uniqBy(modifyData, 'outToken').map(trx => trx.outToken);
-    const uniqueBuy = _.uniqBy(modifyData, 'inToken').map(trx => trx.inToken);
+    const uniqueSell = _.uniqBy(modifyData, "outToken").map(
+      (trx) => trx.outToken
+    );
+    const uniqueBuy = _.uniqBy(modifyData, "inToken").map((trx) => trx.inToken);
 
-    const finalTokens = _.union(uniqueSell, uniqueBuy).filter((trx) => trx !== undefined);
-const getCsvData = finalTokens.map((token)=>{
-  const inAmount = _.sumBy(_.filter(modifyData, { inToken: token }), 'buyAmount');
-  const outAmout = _.sumBy(_.filter(modifyData, { outToken: token }), 'sellAmount');
-  tokenRemaining = inAmount - outAmout
-  return{
-    token:token,
-    inAmount,outAmout,tokenRemaining
-  }
+    const finalTokens = _.union(uniqueSell, uniqueBuy).filter(
+      (trx) => trx !== undefined
+    );
 
 
-});
 
-// console.log(getCsvData)
+    const getCsvData = finalTokens.map((token) => {
+      const inAmount = _.sumBy(
+        _.filter(modifyData, { inToken: token }),
+        "sellAmount"
+      );
+      const outAmout = _.sumBy(
+        _.filter(modifyData, { outToken: token }),
+        "buyAmount"
+      );
+      const wethIn = _.sumBy(
+        _.filter(modifyData, { inToken: 'WETH' }),
+        "sellAmount"
+      );
+       const wethOut = _.sumBy(
+        _.filter(modifyData, { outToken: 'WETH' }),
+        "buyAmount"
+      );
+      
+      const fees = _.sumBy(
+        _.filter(modifyData, { outToken: token }),
+        "fee"
+      );
+      const avgSellPrice =inAmount==0 ? 0 : wethOut / inAmount;
+      const profitEth =   wethIn - wethOut - fees;
+      tokenRemaining = inAmount - outAmout;
+      return {
+        token: token,
+        inAmount,
+        outAmout,
+        tokenRemaining,
+        wethIn,wethOut,avgSellPrice,fees,profitEth
+      };
+    });
+
   
-    console.log("modifydata",uniqueBuy,uniqueSell,finalTokens)
+    // console.log(getCsvData)
+
+    console.log("modifydata", uniqueBuy, uniqueSell, finalTokens);
     walletTrxSheet.addRows(modifyData); // Add data in walletTrxSheet
     walletProfitSheet.addRows(getCsvData); // Add data in walletTrxSheet
 
@@ -224,12 +278,12 @@ const getCsvData = finalTokens.map((token)=>{
       };
     });
   } catch (ex) {
-    throw ex
+    throw ex;
     result.ex = ex;
     // console.error(e);
   } finally {
-    return result=true;
+    return (result = true);
   }
 };
 
-module.exports = { sheetService,writeSheet };
+module.exports = { sheetService, writeSheet };

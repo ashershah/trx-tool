@@ -16,7 +16,7 @@ const createWorkSheet = async (req, res, next) => {
     for (let add of address) {
       console.log("aa",add)
     const result = await sheetService( add, from, to );
-    console.log("result")
+    // console.log("result",result.data)
 
 
     if (result.data) {
