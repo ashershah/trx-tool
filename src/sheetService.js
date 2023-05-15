@@ -237,10 +237,15 @@ const writeSheet = async (
         "buyAmount"
       );
       
-      const fees = _.sumBy(
+      const inTokenFee = _.sumBy(
+        _.filter(modifyData, { inToken: token }),
+        "fee"
+      );
+      const outTokenFee =  _.sumBy(
         _.filter(modifyData, { outToken: token }),
         "fee"
       );
+      const fees = inTokenFee + outTokenFee;
       const avgSellPrice =inAmount==0 ? 0 : wethOut / inAmount;
       const profitEth =   wethIn - wethOut - fees;
       tokenRemaining = inAmount - outAmout;
