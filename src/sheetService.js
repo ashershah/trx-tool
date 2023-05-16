@@ -117,7 +117,7 @@ const sheetService = async (address, from, to, result = {}) => {
       }
     );
 
-    console.log("respose", response?.data?.data?.ethereum?.dexTrade);
+    // console.log("respose", response?.data?.data?.ethereum?.dexTrades);
 
     if (response?.data?.data?.ethereum?.dexTrades) {
       const uniqueData = _.filter(
@@ -128,7 +128,7 @@ const sheetService = async (address, from, to, result = {}) => {
           (trx.baseCurrency.symbol === "WETH" &&
             trx.buyCurrency.symbol === "WETH")
       );
-      console.log("unique", uniqueData);
+      // console.log("unique", uniqueData);
 
       result.data = _.sortBy(
         [
@@ -151,11 +151,12 @@ const sheetService = async (address, from, to, result = {}) => {
 const writeSheet = async (
   walletTrxSheet,
   walletProfitSheet,
+  finalSheet,
+  add,
   data,
   result = {}
 ) => {
   console.log("write sheet");
-
   try {
     walletTrxSheet.columns = [
       { header: "Timestamp", key: "timestamp", width: 20 },
@@ -183,6 +184,20 @@ const writeSheet = async (
       { header: "Fee", key: "fees", width: 15 },
       { header: "Profit ETH", key: "profitEth", width: 15 },
     ];
+
+    finalSheet.columns = [
+      { header: "Wallets", key: "wallets", width: 40 },
+      { header: "Expenses", key: "expense", width: 20 },
+      { header: "Profit", key: "profit", width: 20 },
+      { header: "# Buy", key: "buy", width: 20 },
+      { header: "# Sell", key: "sell", width: 20 },
+      { header: "# Trades", key: "trade", width: 20 },
+      { header: "Expense vs. Profit", key: "expVsPro", width: 20 },
+      { header: "Fee", key: "fee", width: 20 },
+      { header: "# Open Trades", key: "openTrade", width: 20 },
+      { header: "Approval Fee Spent", key: "approved", width: 20 },
+      { header: "Fee Spent in Failed Txs", key: "failed", width: 20 },
+    ];
     let modifyData = [];
 
     data?.forEach((trx) => {
@@ -206,7 +221,7 @@ const writeSheet = async (
       trx.error = trx?.error;
       modifyData.push(trx);
     });
-    console.log("11111modifydata", modifyData);
+    // console.log("11111modifydata", modifyData);
 
     const uniqueSell = _.uniqBy(modifyData, "outToken").map(
       (trx) => trx.outToken
@@ -217,9 +232,7 @@ const writeSheet = async (
       (trx) => trx !== undefined
     );
 
-
-
-    const getCsvData = finalTokens.map((token) => {
+    const walletSheet2 = finalTokens.map((token) => {
       const inAmount = _.sumBy(
         _.filter(modifyData, { inToken: token }),
         "sellAmount"
@@ -229,42 +242,70 @@ const writeSheet = async (
         "buyAmount"
       );
       const wethIn = _.sumBy(
-        _.filter(modifyData, { inToken: 'WETH' }),
+        _.filter(modifyData, { inToken: "WETH" }),
         "sellAmount"
       );
-       const wethOut = _.sumBy(
-        _.filter(modifyData, { outToken: 'WETH' }),
+      const wethOut = _.sumBy(
+        _.filter(modifyData, { outToken: "WETH" }),
         "buyAmount"
       );
-      
+
       const inTokenFee = _.sumBy(
         _.filter(modifyData, { inToken: token }),
         "fee"
       );
-      const outTokenFee =  _.sumBy(
+      const outTokenFee = _.sumBy(
         _.filter(modifyData, { outToken: token }),
         "fee"
       );
       const fees = inTokenFee + outTokenFee;
-      const avgSellPrice =inAmount==0 ? 0 : wethOut / inAmount;
-      const profitEth =   wethIn - wethOut - fees;
+
+      const avgSellPrice =
+        wethIn / uniqueSell.filter((trx) => trx !== undefined).length;
+      const profitEth = wethIn - wethOut - fees;
       tokenRemaining = inAmount - outAmout;
       return {
         token: token,
         inAmount,
         outAmout,
         tokenRemaining,
-        wethIn,wethOut,avgSellPrice,fees,profitEth
+        wethIn,
+        wethOut,
+        avgSellPrice,
+        fees,
+        profitEth,
       };
     });
 
-  
-    // console.log(getCsvData)
+    console.log("walletSheet2", walletSheet2);
 
     console.log("modifydata", uniqueBuy, uniqueSell, finalTokens);
-    walletTrxSheet.addRows(modifyData); // Add data in walletTrxSheet
-    walletProfitSheet.addRows(getCsvData); // Add data in walletTrxSheet
 
+    console.log("getFinalData", modifyData);
+    walletTrxSheet.addRows(modifyData); // Add data in walletTrxSheet
+    walletProfitSheet.addRows(walletSheet2);
+
+    let finalDataSheet = { wallets: `Wallet-${add}` };
+    finalDataSheet.profit = _.sumBy(walletSheet2, "profitEth");
+    finalDataSheet.fee = _.sumBy(walletSheet2, "fees");
+    finalDataSheet.expense = _.sumBy(walletSheet2, "wethOut");
+    finalDataSheet.buy = _.size(_.filter(modifyData, { type: "BUY" }));
+
+    finalDataSheet.sell = _.size(_.filter(modifyData, { type: "SELL" }));
+    finalDataSheet.trade = finalDataSheet.buy + finalDataSheet.sell;
+    finalDataSheet.openTrade = _.size(_.filter(walletSheet2, (trx) => trx.tokenRemaining > 0));
+    finalDataSheet.expVsPro = finalDataSheet.profit / finalDataSheet.expense;
+
+    finalDataSheet.approved = _.sumBy(
+      _.filter(modifyData, { error: "", type: "" }),
+      "fee"
+    );
+    finalDataSheet.failed = _.sumBy(
+      _.filter(modifyData, (trx) => trx.type === "" && !_.isEmpty(trx.error)),
+      "fee"
+    );
+
+    finalSheet.addRow(finalDataSheet);
     const columnIndex = 9;
 
     // Iterate through each row and set the font color of the specified column to red
@@ -282,6 +323,8 @@ const writeSheet = async (
         fgColor: { argb: "fcd703" },
       };
     });
+    i++;
+    console.log("i", i);
   } catch (ex) {
     throw ex;
     result.ex = ex;
