@@ -14,7 +14,7 @@ const sheetService = async (address, from, to, result = {}) => {
       dexTrades(
         options: {desc: "block.height"}
         exchangeName: {in: ["Uniswap", "Uniswap v2", "Uniswap v3"]}
-        any: {txSender: {is: "${address}"}}
+        any: {txSender: {is: "${address}"},taker: {is: "${address}"}}
 
         date: {since: ${from}, till: ${to}}
 
@@ -187,7 +187,9 @@ const writeSheet = async (
 
     finalSheet.columns = [
       { header: "Wallets", key: "wallets", width: 40 },
-      { header: "Expenses", key: "expense", width: 20 },
+      { header: "Expense (no Fee)", key: "expense", width: 20 },
+      { header: " Expenses (with fee)", key: "expenseWithFee", width: 20 },
+     
       { header: "Profit", key: "profit", width: 20 },
       { header: "# Buy", key: "buy", width: 20 },
       { header: "# Sell", key: "sell", width: 20 },
@@ -281,7 +283,7 @@ const writeSheet = async (
 
     console.log("modifydata", uniqueBuy, uniqueSell, finalTokens);
 
-    console.log("getFinalData", modifyData);
+    // console.log("getFinalData", modifyData);
     walletTrxSheet.addRows(modifyData); // Add data in walletTrxSheet
     walletProfitSheet.addRows(walletSheet2);
 
@@ -289,6 +291,7 @@ const writeSheet = async (
     finalDataSheet.profit = _.sumBy(walletSheet2, "profitEth");
     finalDataSheet.fee = _.sumBy(walletSheet2, "fees");
     finalDataSheet.expense = _.sumBy(walletSheet2, "wethOut");
+    finalDataSheet.expenseWithFee =finalDataSheet.expense + finalDataSheet.fee;
     finalDataSheet.buy = _.size(_.filter(modifyData, { type: "BUY" }));
 
     finalDataSheet.sell = _.size(_.filter(modifyData, { type: "SELL" }));
