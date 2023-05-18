@@ -128,13 +128,14 @@ const sheetService = async (address, from, to, result = {}) => {
           (trx.baseCurrency.symbol === "WETH" &&
             trx.buyCurrency.symbol === "WETH")
       );
-      // console.log("unique", uniqueData);
+
+      const filteredTransaction = response?.data?.data?.ethereum?.transactions.filter(obj => !uniqueData.some(item => item.transaction.hash === obj.hash));
+      
 
       result.data = _.sortBy(
         [
           ...uniqueData,
-          // ...response?.data?.data?.ethereum?.dexTrades,
-          ...response?.data?.data?.ethereum?.transactions,
+          ...filteredTransaction,
         ],
         [(o) => -new Date(o?.block?.timestamp?.iso8601)]
       );
@@ -223,7 +224,7 @@ const writeSheet = async (
       trx.error = trx?.error;
       modifyData.push(trx);
     });
-    console.log("11111modifydata", modifyData);
+    // console.log("11111modifydata", modifyData);
 
     const uniqueSell = _.uniqBy(modifyData, "outToken").map(
       (trx) => trx.outToken
