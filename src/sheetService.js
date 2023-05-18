@@ -7,14 +7,14 @@ const excelJS = require("exceljs");
 const _ = require("lodash");
 
 const sheetService = async (address, from, to, result = {}) => {
-  console.log("sheet Service");
+  // console.log("sheet Service         // any: {txSender: {is: "${address}"},taker: {is: "${address}"}} ");
   const query = `
   {
     ethereum(network: ethereum) {
       dexTrades(
         options: {desc: "block.height"}
         exchangeName: {in: ["Uniswap", "Uniswap v2", "Uniswap v3"]}
-        any: {txSender: {is: "${address}"},taker: {is: "${address}"}}
+        any: {txSender: {is: "${address}"}}
 
         date: {since: ${from}, till: ${to}}
 
@@ -223,7 +223,7 @@ const writeSheet = async (
       trx.error = trx?.error;
       modifyData.push(trx);
     });
-    // console.log("11111modifydata", modifyData);
+    console.log("11111modifydata", modifyData);
 
     const uniqueSell = _.uniqBy(modifyData, "outToken").map(
       (trx) => trx.outToken
@@ -239,18 +239,20 @@ const writeSheet = async (
         _.filter(modifyData, { inToken: token }),
         "sellAmount"
       );
+
       const outAmout = _.sumBy(
         _.filter(modifyData, { outToken: token }),
         "buyAmount"
       );
-      const wethIn = _.sumBy(
-        _.filter(modifyData, { inToken: "WETH" }),
+      const wethIn =  token==='WETH' ? inAmount :  _.sumBy(
+        _.filter(modifyData, { inToken: "WETH", outToken: token }),
         "sellAmount"
       );
-      const wethOut = _.sumBy(
-        _.filter(modifyData, { outToken: "WETH" }),
+      const wethOut = token==='WETH' ? outAmout : _.sumBy(
+        _.filter(modifyData, { outToken: "WETH", inToken: token }),
         "buyAmount"
       );
+      console.log("wethin",token,wethIn,wethOut)
 
       const inTokenFee = _.sumBy(
         _.filter(modifyData, { inToken: token }),
