@@ -5,6 +5,7 @@ const API_URL = `https://graphql.bitquery.io/`;
 var fs = require("fs");
 const excelJS = require("exceljs");
 const _ = require("lodash");
+// const { ethers, providers, Wallet } = require("ethers");
 
 const sheetService = async (address, from, to, result = {}) => {
   // console.log("sheet Service         // any: {txSender: {is: "${address}"},taker: {is: "${address}"}} ");
@@ -14,8 +15,7 @@ const sheetService = async (address, from, to, result = {}) => {
       dexTrades(
         options: {desc: "block.height"}
         exchangeName: {in: ["Uniswap", "Uniswap v2", "Uniswap v3"]}
-        any: {txSender: {is: "${address}"}}
-
+        any: {txSender: {is: "${address}"},taker: {is: "${address}"}} 
         date: {since: ${from}, till: ${to}}
 
       )
@@ -148,6 +148,11 @@ const sheetService = async (address, from, to, result = {}) => {
     return result;
   }
 };
+abi = [
+  "function symbol() view returns (string)",
+]
+var wss = "wss://eth-mainnet.g.alchemy.com/v2/tZznxykoI5rNbgmU_rjLTik6sCsPyW8o"; // mainnet
+
 
 const writeSheet = async (
   walletTrxSheet,
@@ -157,6 +162,20 @@ const writeSheet = async (
   data,
   result = {}
 ) => {
+//   let provider = new providers.AlchemyProvider(1, "tZznxykoI5rNbgmU_rjLTik6sCsPyW8o");
+//   console.log("provider", provider);
+//   var customWsProvider = new ethers.providers.WebSocketProvider(wss);
+//   customWsProvider.getTransaction("0xef777879fde8a613c021e1a573456e35863b02bed76dc7d07fedd9b86d9ed53f").then(async function (transaction) {
+// console.log("transaction error",transaction)
+//   })
+
+
+//   let contract = new ethers.Contract("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", abi, provider);
+//   console.log("provider", contract);
+
+//   sym = await contract.symbol()
+//   console.log("symbol", sym);
+
   console.log("write sheet");
   try {
     walletTrxSheet.columns = [
@@ -204,11 +223,11 @@ const writeSheet = async (
     let modifyData = [];
 
     data?.forEach((trx) => {
-      console.log(
-        trx?.quoteCurrency?.symbol,
-        trx?.baseCurrency?.symbol,
-        trx?.quoteCurrency?.symbol == "WETH" ? "SELL" : "BUY"
-      );
+      // console.log(
+      //   trx?.quoteCurrency?.symbol,
+      //   trx?.baseCurrency?.symbol,
+      //   trx?.quoteCurrency?.symbol == "WETH" ? "SELL" : "BUY"
+      // );
       trx.timestamp = moment(trx?.block?.timestamp?.iso8601).format(
         "YYYY-MM-DD hh:mm:ss"
       );
@@ -282,7 +301,7 @@ const writeSheet = async (
       };
     });
 
-    console.log("walletSheet2", walletSheet2);
+    // console.log("walletSheet2", walletSheet2);
 
     console.log("modifydata", uniqueBuy, uniqueSell, finalTokens);
 
