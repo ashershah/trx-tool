@@ -142,6 +142,7 @@ const sheetService = async (address, from, to, result = {}) => {
         [...uniqueData, ...filteredTransaction],
         [(o) => -new Date(o?.block?.timestamp?.iso8601)]
       );
+      console.log("lengthhhhh", result.data.length);
     }
   } catch (ex) {
     thor;
@@ -176,7 +177,7 @@ const writeSheet = async (
   data,
   result = {}
 ) => {
-  console.log("ashar");
+  // console.log("ashar");
   const provider = new ethers.providers.AlchemyProvider(
     1,
     "tZznxykoI5rNbgmU_rjLTik6sCsPyW8o"
@@ -188,8 +189,9 @@ const writeSheet = async (
     let outSymbol = "";
     let inSymbol = "";
     let outAmount = "";
+    let inAmount = "";
     let transaction = await customWsProvider.getTransaction(trx);
-    console.log("trx", trx);
+    // console.log("trx", trx);
 
     let result = [];
     let methods;
@@ -257,7 +259,7 @@ const writeSheet = async (
                       );
                       methods = 6;
                     } catch (error) {
-                      console.log("final err : ", transaction);
+                      // console.log("final err : ", transaction);
                     }
                   }
                 }
@@ -268,7 +270,7 @@ const writeSheet = async (
       }
     }
     if (result.length > 0) {
-      console.log("result after methods");
+      // console.log("result after methods");
 
       let outTokenContract = new ethers.Contract(
         result?.path[0],
@@ -279,24 +281,26 @@ const writeSheet = async (
       outSymbol = await outTokenContract.symbol();
       inSymbol = await inTokenContract.symbol();
       outAmount = result?.amountIn ? result?.amountIn?.toString() : null;
+      // console.log("result?.amountIn ",result,result?.amountIn?.toString()  ,result?.amountOut?.toString() )
+      inAmount = result?.amountOut ? result?.amountOut?.toString() : null;
     } else {
-      console.log("result not exist");
+      // console.log("result not exist");
     }
     // let sellAmount = result?.
-    return { outSymbol, inSymbol, outAmount };
+    return { outSymbol, inSymbol, outAmount, inAmount };
   };
   const getApprovedToken = async (trx) => {
-    console.log("trx", trx);
+    // console.log("trx", trx);
     try {
       let contract = new ethers.Contract(trx, abi, provider);
       //  console.log("trx",contract)
-      console.log("symbollllllll", await contract.symbol());
+      // console.log("symbollllllll", await contract.symbol());
 
       let symbol = await contract.symbol();
 
       return symbol;
     } catch (err) {
-      console.log("error in approved", err);
+      // console.log("error in approved");
       throw err;
     }
   };
@@ -355,14 +359,14 @@ const writeSheet = async (
     ];
     let modifyData = [];
     let ethersData = "";
-    const allPromises = [];
+    let allPromises = [];
 
     for (let trx of data) {
       try {
         let promise = new Promise((res, rej) => {
           getTransactionToken(trx?.transaction?.hash)
             .then(async (getData) => {
-              console.log("resolve Data");
+              // console.log("resolve Data");
 
               trx.timestamp = moment(trx?.block?.timestamp?.iso8601).format(
                 "YYYY-MM-DD hh:mm:ss"
@@ -370,7 +374,7 @@ const writeSheet = async (
               trx.fee = trx?.transaction?.gasValue || trx.gasValue;
               trx.outToken = getData?.outSymbol || trx?.baseCurrency?.symbol;
 
-              trx.inToken = getData?.inSymbol ||  trx?.quoteCurrency?.symbol;
+              trx.inToken = getData?.inSymbol || trx?.quoteCurrency?.symbol;
               trx.type = trx?.quoteCurrency?.symbol
                 ? trx?.quoteCurrency?.symbol &&
                   trx?.sellCurrency?.symbol == "WETH"
@@ -379,8 +383,33 @@ const writeSheet = async (
                 : "" || trx?.error == ""
                 ? "Approved"
                 : "Failed";
+
+              //   trx.outToken =
+              //   trx?.baseCurrency?.symbol == "-"
+              //     ? await getTransactionToken(trx?.transaction?.hash, 0)
+              //     : trx?.baseCurrency?.symbol;
+              // trx.inToken =
+              //   trx?.quoteCurrency?.symbol == "-"
+              //     ? await getTransactionToken(trx?.transaction?.hash, 1)
+              //     : trx?.quoteCurrency?.symbol;
+              // console.log(
+              //   "trx?.sellAmount",
+              //   trx?.buyAmount,
+              //   getData?.outAmount,
+
+              //   trx?.sellAmount,
+
+              //   getData?.inAmount,
+              //   getData?.outAmount / Math.pow(10, trx?.baseCurrency?.decimals)
+              // );
+
+              trx.buyAmount =
+                getData?.outAmount /
+                  Math.pow(10, trx?.baseCurrency?.decimals) || trx?.buyAmount;
+
               trx.sellAmount =
-                getData?.outAmount / Math.pow(10, trx?.quoteCurrency?.decimals) || trx?.sellAmount;
+                getData?.inAmount /
+                  Math.pow(10, trx?.quoteCurrency?.decimals) || trx?.sellAmount;
 
               trx.hash = trx?.transaction?.hash || trx.hash;
               trx.error = trx?.error;
@@ -392,7 +421,7 @@ const writeSheet = async (
               res(trx);
             })
             .catch(async (error) => {
-              console.log("error Data");
+              // console.log("error Data");
               try {
                 trx.timestamp = moment(trx?.block?.timestamp?.iso8601).format(
                   "YYYY-MM-DD hh:mm:ss"
@@ -432,14 +461,29 @@ const writeSheet = async (
       }
     }
     // console.log("11111modifydata", modifyData);
-    console.log("all promsies start");
-    console.log("all promsies", allPromises);
+    // console.log("all promsies start");
+    // console.log("all promsies", allPromises);
     try {
-      modifyData = await Promise.all(allPromises);
+      let maxExecute = 100;
+      let i = -1;
+      while (i < allPromises.length) {
+        console.log("i", i);
+        let chunks = await Promise.all(
+          allPromises.slice(i + 1, i + 1 + maxExecute)
+        );
+        modifyData = [...modifyData, ...chunks];
+
+        console.log("modifyData", modifyData.length, modifyData[0]);
+
+        i = maxExecute + (i + 1);
+      }
+      // modifyData= await Promise.all(allPromises);
+      // console.log(" modifydata",modifyData.length);
+
       modifyData = _.reject(modifyData, _.isEmpty);
-      console.log("alllll modifydata",modifyData);
+      console.log("alllll modifydata", modifyData.length);
     } catch (error) {
-      console.log("all err", err);
+      // console.log("all err");
     }
 
     const uniqueSell = _.uniqBy(modifyData, "outToken").map(
@@ -462,9 +506,9 @@ const writeSheet = async (
         "buyAmount"
       );
       const wethIn = _.sumBy(
-              _.filter(modifyData, { inToken: "WETH", outToken: token }),
-              "sellAmount"
-            );
+        _.filter(modifyData, { inToken: "WETH", outToken: token }),
+        "sellAmount"
+      );
       const wethOut =
         token === "WETH"
           ? outAmout
@@ -500,12 +544,11 @@ const writeSheet = async (
       };
     });
 
+    // console.log("walletSheet2",  _.reject(walletSheet2, { token: 'WETH' }));
 
-    console.log("walletSheet2",  _.reject(walletSheet2, { token: 'WETH' }));
+    walletSheet2 = _.reject(walletSheet2, { token: "WETH" });
 
-    walletSheet2 = _.reject(walletSheet2, { token: 'WETH' });
-
-    console.log("walletSheet2",  walletSheet2);
+    // console.log("walletSheet2",  walletSheet2);
 
     // console.log("modifydata", uniqueBuy, uniqueSell, finalTokens);
 
@@ -555,7 +598,7 @@ const writeSheet = async (
       };
     });
     i++;
-    console.log("i", i);
+    // console.log("i", i);
   } catch (ex) {
     throw ex;
     result.ex = ex;
