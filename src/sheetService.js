@@ -15,7 +15,7 @@ const sheetService = async (address, from, to, result = {}) => {
       dexTrades(
         options: {desc: "block.height"}
         exchangeName: {in: ["Uniswap", "Uniswap v2", "Uniswap v3"]}
-        any: {txSender: {is: "${address}"},taker: {is: "${address}"}} 
+        any: {txSender: {is: "${address}"}} 
         date: {since: ${from}, till: ${to}}
 
       )
@@ -123,7 +123,7 @@ const sheetService = async (address, from, to, result = {}) => {
     // console.log("respose", response?.data?.data?.ethereum?.dexTrades);
 
     if (response?.data?.data?.ethereum?.dexTrades) {
-      const uniqueData = _.filter(
+      let uniqueData = _.filter(
         response?.data?.data?.ethereum?.dexTrades,
         (trx) =>
           (trx.sellCurrency.symbol === "WETH" &&
@@ -131,6 +131,23 @@ const sheetService = async (address, from, to, result = {}) => {
           (trx.baseCurrency.symbol === "WETH" &&
             trx.buyCurrency.symbol === "WETH")
       );
+      uniqueData = _.map(uniqueData, (item) => ({
+        hash: item.transaction.hash,
+        ...item,
+      }));
+
+      console.log(
+        "ttotal transactioon beforre",
+        uniqueData.length,
+        uniqueData[0]
+      );
+      const groupedById = _.groupBy(uniqueData, "hash");
+      console.log("group id", groupedById);
+
+      uniqueData = _.mapValues(groupedById, (group) => _.last(group));
+      uniqueData = _.flatMap(uniqueData);
+
+      console.log("ttotal transactioon afterrr", uniqueData.length, uniqueData);
 
       const filteredTransaction =
         response?.data?.data?.ethereum?.transactions.filter(
@@ -182,7 +199,6 @@ const writeSheet = async (
     1,
     "tZznxykoI5rNbgmU_rjLTik6sCsPyW8o"
   );
-
   var customWsProvider = new ethers.providers.WebSocketProvider(wss);
 
   const getTransactionToken = async (trx, index) => {
@@ -328,7 +344,7 @@ const writeSheet = async (
       {
         header: "Error in case of failed transaction",
         key: "error",
-        width: 30,
+        width: 50,
       },
     ];
     walletProfitSheet.columns = [
@@ -384,25 +400,6 @@ const writeSheet = async (
                 ? "Approved"
                 : "Failed";
 
-              //   trx.outToken =
-              //   trx?.baseCurrency?.symbol == "-"
-              //     ? await getTransactionToken(trx?.transaction?.hash, 0)
-              //     : trx?.baseCurrency?.symbol;
-              // trx.inToken =
-              //   trx?.quoteCurrency?.symbol == "-"
-              //     ? await getTransactionToken(trx?.transaction?.hash, 1)
-              //     : trx?.quoteCurrency?.symbol;
-              // console.log(
-              //   "trx?.sellAmount",
-              //   trx?.buyAmount,
-              //   getData?.outAmount,
-
-              //   trx?.sellAmount,
-
-              //   getData?.inAmount,
-              //   getData?.outAmount / Math.pow(10, trx?.baseCurrency?.decimals)
-              // );
-
               trx.buyAmount =
                 getData?.outAmount /
                   Math.pow(10, trx?.baseCurrency?.decimals) || trx?.buyAmount;
@@ -414,14 +411,23 @@ const writeSheet = async (
               trx.hash = trx?.transaction?.hash || trx.hash;
               trx.error = trx?.error;
               trx.apptoken = "";
-              // trx.apptoken =  trx?.to?.address && trx?.error === ""
-              //   ? await getApprovedToken(trx?.to?.address)
-              //   : " ";
 
               res(trx);
             })
             .catch(async (error) => {
-              // console.log("error Data");
+              let customError = "";
+
+              if (trx.error != "") {
+                try {
+                  const response = await axios.get(
+                    `https://api.tenderly.co/api/v1/public-contract/1/tx/${trx.hash}`
+                  );
+                  console.log("response", response?.data?.error_message);
+                  customError = response?.data?.error_message;
+                } catch (err) {
+                  console.log("custtom error", err);
+                }
+              }
               try {
                 trx.timestamp = moment(trx?.block?.timestamp?.iso8601).format(
                   "YYYY-MM-DD hh:mm:ss"
@@ -440,7 +446,8 @@ const writeSheet = async (
                 trx.sellAmount = trx?.sellAmount;
 
                 trx.hash = trx?.transaction?.hash || trx.hash;
-                trx.error = trx?.error;
+                trx.error =
+                  trx?.error != "" ? customError || trx?.error : trx?.error;
                 trx.apptoken =
                   trx?.to?.address && trx?.error === ""
                     ? await getApprovedToken(trx?.to?.address)
@@ -473,7 +480,7 @@ const writeSheet = async (
         );
         modifyData = [...modifyData, ...chunks];
 
-        console.log("modifyData", modifyData.length, modifyData[0]);
+        // console.log("modifyData", modifyData.length, modifyData[0]);
 
         i = maxExecute + (i + 1);
       }
@@ -481,7 +488,7 @@ const writeSheet = async (
       // console.log(" modifydata",modifyData.length);
 
       modifyData = _.reject(modifyData, _.isEmpty);
-      console.log("alllll modifydata", modifyData.length);
+      // console.log("alllll modifydata", modifyData.length);
     } catch (error) {
       // console.log("all err");
     }
@@ -571,11 +578,19 @@ const writeSheet = async (
     finalDataSheet.expVsPro = finalDataSheet.profit / finalDataSheet.expense;
 
     finalDataSheet.approved = _.sumBy(
-      _.filter(modifyData, { error: "", type: "" }),
+      _.filter(modifyData, { error: "", type: "Approved" }),
       "fee"
     );
+    console.log(
+      "feeeeeee",
+      modifyData[0],
+      _.sumBy(_.filter(modifyData, { error: "", type: "" }), "fee")
+    );
     finalDataSheet.failed = _.sumBy(
-      _.filter(modifyData, (trx) => trx.type === "" && !_.isEmpty(trx.error)),
+      _.filter(
+        modifyData,
+        (trx) => trx.type === "Failed" && !_.isEmpty(trx.error)
+      ),
       "fee"
     );
 
