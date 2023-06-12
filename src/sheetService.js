@@ -6,160 +6,271 @@ var fs = require("fs");
 const excelJS = require("exceljs");
 const _ = require("lodash");
 const { ethers, providers, Wallet } = require("ethers");
+const { get } = require("http");
 
 const sheetService = async (address, from, to, result = {}) => {
-  // console.log("sheet Service         // any: {txSender: {is: "${address}"},taker: {is: "${address}"}} ");
-  const query = `
-  {
-    ethereum(network: ethereum) {
-      dexTrades(
-        options: {desc: "block.height"}
-        exchangeName: {in: ["Uniswap", "Uniswap v2", "Uniswap v3"]}
-        any: {txSender: {is: "${address}"}} 
-        date: {since: ${from}, till: ${to}}
+  console.log("sheetService");
+  var wss = "wss://eth-mainnet.g.alchemy.com/v2/tZznxykoI5rNbgmU_rjLTik6sCsPyW8o"; // mainnet
 
-      )
-     {
-        transaction {
-          hash
-        }
-        smartContract {
-          address {
-            address
-          }
-          contractType
-          currency {
-            name
-          }
-        }
-        tradeIndex
-        date {
-          date
-        }
-        block {
-          height
-          timestamp {
-            iso8601
-          }
-        }
-        buyAmount
-        buyAmountInUsd: buyAmount(in: USD)
-        buyCurrency {
-          symbol
-          address
-          tokenType
-          tokenId
-        }
-        sellAmount
-        sellAmountInUsd: sellAmount(in: USD)
-        sellCurrency {
-          symbol
-          address
-        }
-        sellAmountInUsd: sellAmount(in: USD)
-        tradeAmount(in: USD)
-        transaction {
-          gasValue
-          gasPrice
-          gasValue
-          gas
-        }
-        timeInterval {
-          day
-          hour
-          minute
-          second
-        }
-        quoteCurrency {
-          name
-          symbol
-          decimals
-        }
-        baseCurrency {
-          name
-          symbol
-          decimals
-        }
-      }
+  const iface = new ethers.utils.Interface([
+    "function swapExactETHForTokens(uint256 amountOutMin, address[] path, address to, uint256 deadline)",
+    "function swapETHForExactTokens(uint amountOut, address[] calldata path, address to, uint deadline)",
+    "function swapExactETHForTokensSupportingFeeOnTransferTokens(uint amountOutMin,address[] calldata path,address to,uint deadline)",
 
-      transactions(
-        txSender: {is:  "${address}"}
-        date: {since: ${from}, till: ${to}}
-              ) {
-        error
-        txType
-        amount
-        hash
-        gas
-        gasPrice
-        gasValue
-        block {
-          timestamp {
-            iso8601
-          }
-        }
-        to {
-          address
-        }
-      }
-    }
-  }
-`;
+    "function swapExactTokensForETH(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external",
+    "function swapExactTokensForETHSupportingFeeOnTransferTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external",
+    "function swapTokensForExactETH(uint amountOut, uint amountInMax, address[] calldata path, address to, uint deadline) external",
+
+    "function swapExactTokensForTokens(uint amountIn,uint amountOutMin,address[] calldata path,address to,uint deadline) external",
+    "function swapExactTokensForTokensSupportingFeeOnTransferTokens(uint amountIn,uint amountOutMin,address[] calldata path,address to,uint deadline) external",
+    "function swapTokensForExactTokens(uint amountOut,uint amountInMax,address[] calldata path,address to,uint deadline) external",
+    "function execute(bytes commands,bytes[] inputs,uint256 deadline)",
+    "function approve(address _spender, uint256 _value)",
+  ]);
+  const logIface = new ethers.utils.Interface(["event Swap( address indexed sender, uint amount0In, uint amount1In, uint amount0Out, uint amount1Out, address indexed to)"]);
+
+  const apiKey = "M9TKZC1D3W8WPPPYD1TP41DTKITVNPMNTG";
+
   try {
-    const response = await axios.post(
-      API_URL,
-      {
-        query,
-        variables: {},
-      },
-      {
-        headers: {
-          "Content-Type": "application/json",
-          "X-API-KEY": API_KEY,
-        },
+    try {
+
+      //convert timestamp to block number
+      let subtractedDate = moment(from, 'YYYY-MM-DD').subtract(1, 'day').format('YYYY-MM-DD');
+      let addDate = moment(to, 'YYYY-MM-DD').add(1, 'day').format('YYYY-MM-DD');
+      console.log("sub add", subtractedDate, addDate);
+
+      const startTime = '00:01:00';
+      const endTime = '23:59:00';
+
+      subtractedDate = moment(`${subtractedDate} ${startTime}`).format('YYYY-MM-DD HH:mm:ss');
+      addDate = moment(`${addDate} ${endTime}`).format('YYYY-MM-DD HH:mm:ss');
+
+      const startTimestamp = moment(subtractedDate).unix();
+      const endTimestamp = moment(addDate).unix();
+
+
+      const startResponse = await axios.get(
+        `https://api.etherscan.io/api?module=block&action=getblocknobytime&timestamp=${startTimestamp}&closest=before&apikey=${apiKey}`
+      );
+      const endResponse = await axios.get(
+        `https://api.etherscan.io/api?module=block&action=getblocknobytime&timestamp=${endTimestamp}&closest=before&apikey=${apiKey}`
+      );
+      const startBlock = startResponse?.data?.result;
+      const endBlock = endResponse?.data?.result;
+
+      if (startBlock && endBlock) {
+        try {
+          let response = await axios.get(
+            `https://api.etherscan.io/api?module=account&action=txlist&address=${address}&startblock=${startBlock}&endblock=${endBlock}&sort=asc&apikey=${apiKey}`
+          );
+          console.log(
+            "response",
+            response?.data?.result[0],
+            response?.data?.result?.length
+          );
+          if (response?.data?.result?.length) {
+
+
+            //get data by dates
+            const getDateData = _.filter(response?.data?.result, obj => {
+              const date = moment.unix(obj.timeStamp).utc().format(
+                "YYYY-MM-DD"
+              );
+
+              return `${date}` >= JSON.parse(from) && `${date}` <= JSON.parse(to);
+
+            });
+
+            console.log(
+              "getDateData",
+              // getDateData[1152],
+              getDateData[1],
+              getDateData?.length
+            );
+
+            let firstSheetData = [];
+            let abi = ["function symbol() view returns (string)"];
+            const provider = new ethers.providers.AlchemyProvider(
+              1,
+              "tZznxykoI5rNbgmU_rjLTik6sCsPyW8o"
+            );
+            var customWsProvider = new ethers.providers.WebSocketProvider(wss);
+
+
+
+
+
+
+
+
+
+
+            const decodeTransaction = async (trx) => {
+              try {
+                if (trx.functionName.substring(0, trx.functionName.indexOf("(")) == 'approve' && trx.functionName != '') {
+                  let contract = new ethers.Contract(trx.to, abi, provider);
+                  trx.apptoken = await contract.symbol();
+                  const transactionFee = parseInt(trx?.gasPrice) * parseInt(trx?.gasUsed);
+                  trx.fee = transactionFee / 10 ** 18                  // console.log("symbol", await contract.symbol())
+                  trx.timestamp = moment.unix(trx.timeStamp).utc().format(
+                    "YYYY-MM-DD hh:mm:ss"
+                  );
+                  // firstSheetData.push(trx)
+                }
+                else if (trx.isError == '1' && trx.functionName != '') {
+                  trx.timestamp = moment.unix(trx.timeStamp).utc().format(
+                    "YYYY-MM-DD hh:mm:ss"
+                  );
+                  trx.error = "execution reverted"
+                  const transactionFee = parseInt(trx?.gasPrice) * parseInt(trx?.gasUsed);
+                  trx.fee = transactionFee / 10 ** 18
+
+
+                }
+
+
+
+
+                else if (trx?.to != '0xef1c6e67703c7bd7107eed8303fbe6ec2554bf6b' && trx.functionName != '') {
+
+                  let decoded = iface.decodeFunctionData(
+                    trx.functionName.substring(0, trx.functionName.indexOf("(")),
+                    trx?.input
+                  );
+                  trx.timestamp = moment.unix(trx.timeStamp).utc().format(
+                    "YYYY-MM-DD hh:mm:ss"
+                  );
+
+                  // trx.buyAmount = decoded?.amountIn?.toString() || "nill"
+                  // trx.sellAmount = decoded?.amountOut?.toString() || "nill"
+                  // console.log("decoded", decoded)
+
+                  let outTokenContract = new ethers.Contract(
+                    decoded?.path[0],
+                    abi,
+                    provider
+                  );
+                  try {
+
+                    const receipt = await customWsProvider.getTransactionReceipt(trx.hash);
+                    // console.log("receipt", receipt);
+
+
+
+                    const logs = receipt.logs.filter(log => log?.topics[0] == '0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822');
+
+                    const lastObject = _.last(logs);
+
+
+
+                    const decodedLog = logIface.parseLog(lastObject);
+                    trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() : ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString();
+                    trx.sellAmount = ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() : ethers.BigNumber.from(decodedLog?.args?.amount0Out?._hex).toString();
+                  
+
+
+                  } catch (error) {
+                    console.log("error full log log",error)
+
+                    throw error
+
+                  }
+
+
+
+
+
+
+
+                  let inTokenContract = new ethers.Contract(decoded?.path[1], abi, provider);
+                  trx.outToken = await outTokenContract.symbol() || '';
+                  if (_.includes(['WETH', 'USDT', 'USDC'], trx?.outToken)) {
+                    trx.type = 'Buy'
+                  } else {
+                    trx.type = 'Sell'
+                  }
+                  trx.inToken = await inTokenContract.symbol() || '';
+                  const transactionFee = parseInt(trx?.gasPrice) * parseInt(trx?.gasUsed);
+                  trx.fee = transactionFee / 10 ** 18
+
+                  trx.function = trx.functionName.substring(0, trx.functionName.indexOf("("));
+                  trx.apptoken = "";
+
+
+                }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                return trx;
+              } catch (error) {
+                console.error('Error decoding transaction:', trx?.functionName);
+                return null;
+              }
+            }
+
+
+
+            const getDecodeTransactions = async (transactions) => {
+              const batchSize = 80; // Number of transactions to process in each batch
+              const batches = [];
+
+              for (let i = 0; i < transactions.length; i += batchSize) {
+                const batch = transactions.slice(i, i + batchSize);
+                batches.push(batch);
+              }
+
+              const decodedTransactions = [];
+
+              for (let i = 0; i < batches.length; i++) {
+                const batch = batches[i];
+                const promises = batch.map(transaction => decodeTransaction(transaction));
+                const decodedBatch = await Promise.all(promises);
+                decodedTransactions.push(...decodedBatch);
+              }
+
+              return decodedTransactions;
+            }
+
+
+
+
+
+            let decodeTransactions = await getDecodeTransactions(getDateData);
+            console.log('Decoded Transactions:', decodeTransactions.slice(0, 10));
+
+
+
+
+
+            result.data = _.reject(decodeTransactions, obj => {
+              return _.isNull(obj) || _.isEmpty(obj.functionName);
+            });
+
+
+          } else {
+            result.error = response?.data?.message || "Not Found";
+          }
+
+        } catch (error) {
+          console.log("trx list error", error);
+        }
+      } else {
+        result.error = "Time period issue";
       }
-    );
-
-    // console.log("respose", response?.data?.data?.ethereum?.dexTrades);
-
-    if (response?.data?.data?.ethereum?.dexTrades) {
-      let uniqueData = _.filter(
-        response?.data?.data?.ethereum?.dexTrades,
-        (trx) =>
-          (trx.sellCurrency.symbol === "WETH" &&
-            trx.quoteCurrency.symbol === "WETH") ||
-          (trx.baseCurrency.symbol === "WETH" &&
-            trx.buyCurrency.symbol === "WETH")
-      );
-      uniqueData = _.map(uniqueData, (item) => ({
-        hash: item.transaction.hash,
-        ...item,
-      }));
-
-      console.log(
-        "ttotal transactioon beforre",
-        uniqueData.length,
-        uniqueData[0]
-      );
-      const groupedById = _.groupBy(uniqueData, "hash");
-      console.log("group id", groupedById);
-
-      uniqueData = _.mapValues(groupedById, (group) => _.last(group));
-      uniqueData = _.flatMap(uniqueData);
-
-      console.log("ttotal transactioon afterrr", uniqueData.length, uniqueData);
-
-      const filteredTransaction =
-        response?.data?.data?.ethereum?.transactions.filter(
-          (obj) =>
-            !uniqueData.some((item) => item.transaction.hash === obj.hash)
-        );
-
-      result.data = _.sortBy(
-        [...uniqueData, ...filteredTransaction],
-        [(o) => -new Date(o?.block?.timestamp?.iso8601)]
-      );
-      console.log("lengthhhhh", result.data.length);
+    } catch (error) {
+      console.log("block no error", error);
     }
   } catch (ex) {
     thor;
@@ -169,22 +280,6 @@ const sheetService = async (address, from, to, result = {}) => {
     return result;
   }
 };
-abi = ["function symbol() view returns (string)"];
-var wss = "wss://eth-mainnet.g.alchemy.com/v2/tZznxykoI5rNbgmU_rjLTik6sCsPyW8o"; // mainnet
-
-const iface = new ethers.utils.Interface([
-  "function swapExactETHForTokens(uint256 amountOutMin, address[] path, address to, uint256 deadline)",
-  "function swapETHForExactTokens(uint amountOut, address[] calldata path, address to, uint deadline)",
-  "function swapExactETHForTokensSupportingFeeOnTransferTokens(uint amountOutMin,address[] calldata path,address to,uint deadline)",
-
-  "function swapExactTokensForETH(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external",
-  "function swapExactTokensForETHSupportingFeeOnTransferTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external",
-  "function swapTokensForExactETH(uint amountOut, uint amountInMax, address[] calldata path, address to, uint deadline) external",
-
-  "function swapExactTokensForTokens(uint amountIn,uint amountOutMin,address[] calldata path,address to,uint deadline) external",
-  "function swapExactTokensForTokensSupportingFeeOnTransferTokens(uint amountIn,uint amountOutMin,address[] calldata path,address to,uint deadline) external",
-  "function swapTokensForExactTokens(uint amountOut,uint amountInMax,address[] calldata path,address to,uint deadline) external",
-]);
 
 const writeSheet = async (
   walletTrxSheet,
@@ -194,142 +289,7 @@ const writeSheet = async (
   data,
   result = {}
 ) => {
-  // console.log("ashar");
-  const provider = new ethers.providers.AlchemyProvider(
-    1,
-    "tZznxykoI5rNbgmU_rjLTik6sCsPyW8o"
-  );
-  var customWsProvider = new ethers.providers.WebSocketProvider(wss);
-
-  const getTransactionToken = async (trx, index) => {
-    let outSymbol = "";
-    let inSymbol = "";
-    let outAmount = "";
-    let inAmount = "";
-    let transaction = await customWsProvider.getTransaction(trx);
-    // console.log("trx", trx);
-
-    let result = [];
-    let methods;
-    //we will use try and catch to handle the error and decode the data of the function used to swap the token
-    try {
-      result = iface.decodeFunctionData(
-        "swapExactETHForTokens",
-        transaction.data
-      );
-      methods = 1;
-    } catch (error) {
-      try {
-        result = iface.decodeFunctionData(
-          "swapExactETHForTokensSupportingFeeOnTransferTokens",
-          transaction.data
-        );
-        methods = 1;
-      } catch (error) {
-        try {
-          result = iface.decodeFunctionData(
-            "swapETHForExactTokens",
-            transaction.data
-          );
-          methods = 2;
-        } catch (error) {
-          try {
-            result = iface.decodeFunctionData(
-              "swapExactTokensForETH",
-              transaction.data
-            );
-            methods = 3;
-          } catch (error) {
-            try {
-              result = iface.decodeFunctionData(
-                "swapTokensForExactETH",
-                transaction.data
-              );
-              methods = 4;
-            } catch (error) {
-              try {
-                result = iface.decodeFunctionData(
-                  "swapExactTokensForETHSupportingFeeOnTransferTokens",
-                  transaction.data
-                );
-                methods = 3;
-              } catch (error) {
-                try {
-                  result = iface.decodeFunctionData(
-                    "swapExactTokensForTokens",
-                    transaction.data
-                  );
-                  methods = 5;
-                } catch (error) {
-                  try {
-                    result = iface.decodeFunctionData(
-                      "swapExactTokensForTokensSupportingFeeOnTransferTokens",
-                      transaction.data
-                    );
-                    methods = 5;
-                  } catch (error) {
-                    try {
-                      result = iface.decodeFunctionData(
-                        "swapTokensForExactTokens",
-                        transaction.data
-                      );
-                      methods = 6;
-                    } catch (error) {
-                      // console.log("final err : ", transaction);
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-    if (result.length > 0) {
-      // console.log("result after methods");
-
-      let outTokenContract = new ethers.Contract(
-        result?.path[0],
-        abi,
-        provider
-      );
-      let inTokenContract = new ethers.Contract(result?.path[1], abi, provider);
-      outSymbol = await outTokenContract.symbol();
-      inSymbol = await inTokenContract.symbol();
-      outAmount = result?.amountIn ? result?.amountIn?.toString() : null;
-      // console.log("result?.amountIn ",result,result?.amountIn?.toString()  ,result?.amountOut?.toString() )
-      inAmount = result?.amountOut ? result?.amountOut?.toString() : null;
-    } else {
-      // console.log("result not exist");
-    }
-    // let sellAmount = result?.
-    return { outSymbol, inSymbol, outAmount, inAmount };
-  };
-  const getApprovedToken = async (trx) => {
-    // console.log("trx", trx);
-    try {
-      let contract = new ethers.Contract(trx, abi, provider);
-      //  console.log("trx",contract)
-      // console.log("symbollllllll", await contract.symbol());
-
-      let symbol = await contract.symbol();
-
-      return symbol;
-    } catch (err) {
-      // console.log("error in approved");
-      throw err;
-    }
-  };
-
-  console.log(
-    "write sheet"
-    // await getTransactionToken(
-    //   "0x718d7887911dc1247794f40f040cadfaa6cb458502cbaf040985203f1c793bbc",
-    //   0,
-    //   "transactions"
-    // )
-    // await getApprovedToken("0x7a250d5630b4cf539739df2c5dacb4c659f2488d")
-  );
+  console.log("writeSheet");
   try {
     walletTrxSheet.columns = [
       { header: "Timestamp", key: "timestamp", width: 20 },
@@ -344,6 +304,11 @@ const writeSheet = async (
       {
         header: "Error in case of failed transaction",
         key: "error",
+        width: 50,
+      },
+      {
+        header: "Function",
+        key: "function",
         width: 50,
       },
     ];
@@ -373,125 +338,29 @@ const writeSheet = async (
       { header: "Approval Fee Spent", key: "approved", width: 20 },
       { header: "Fee Spent in Failed Txs", key: "failed", width: 20 },
     ];
-    let modifyData = [];
+    console.log("data", data.length)
+    let modifyData = data;
     let ethersData = "";
     let allPromises = [];
+    // console.log("writeSheet",data[0]);
 
-    for (let trx of data) {
-      try {
-        let promise = new Promise((res, rej) => {
-          getTransactionToken(trx?.transaction?.hash)
-            .then(async (getData) => {
-              // console.log("resolve Data");
+    // for (let trx of data) {
+    //   // console.log("writeSheet",trx.timeStamp, moment.unix(trx.timeStamp).format(
+    //   //   "YYYY-MM-DD hh:mm:ss"
+    //   // ));
 
-              trx.timestamp = moment(trx?.block?.timestamp?.iso8601).format(
-                "YYYY-MM-DD hh:mm:ss"
-              );
-              trx.fee = trx?.transaction?.gasValue || trx.gasValue;
-              trx.outToken = getData?.outSymbol || trx?.baseCurrency?.symbol;
+    //   trx.timestamp = moment.unix(trx.timeStamp).utc().format(
+    //     "YYYY-MM-DD hh:mm:ss"
+    //   );
+    //   trx.fee = trx?.gasPrice;
 
-              trx.inToken = getData?.inSymbol || trx?.quoteCurrency?.symbol;
-              trx.type = trx?.quoteCurrency?.symbol
-                ? trx?.quoteCurrency?.symbol &&
-                  trx?.sellCurrency?.symbol == "WETH"
-                  ? "SELL"
-                  : "BUY"
-                : "" || trx?.error == ""
-                ? "Approved"
-                : "Failed";
+    //   trx.hash = trx.hash;
+    //   trx.function = trx.functionName.substring(0, trx.functionName.indexOf("("));
+    //   trx.apptoken = "";
+    //   modifyData.push(trx);
+    // }
 
-              trx.buyAmount =
-                getData?.outAmount /
-                  Math.pow(10, trx?.baseCurrency?.decimals) || trx?.buyAmount;
-
-              trx.sellAmount =
-                getData?.inAmount /
-                  Math.pow(10, trx?.quoteCurrency?.decimals) || trx?.sellAmount;
-
-              trx.hash = trx?.transaction?.hash || trx.hash;
-              trx.error = trx?.error;
-              trx.apptoken = "";
-
-              res(trx);
-            })
-            .catch(async (error) => {
-              let customError = "";
-
-              if (trx.error != "") {
-                try {
-                  const response = await axios.get(
-                    `https://api.tenderly.co/api/v1/public-contract/1/tx/${trx.hash}`
-                  );
-                  console.log("response", response?.data?.error_message);
-                  customError = response?.data?.error_message;
-                } catch (err) {
-                  console.log("custtom error", err);
-                }
-              }
-              try {
-                trx.timestamp = moment(trx?.block?.timestamp?.iso8601).format(
-                  "YYYY-MM-DD hh:mm:ss"
-                );
-                trx.fee = trx?.transaction?.gasValue || trx.gasValue;
-                trx.outToken = trx?.baseCurrency?.symbol;
-                trx.inToken = trx?.quoteCurrency?.symbol;
-                trx.type = trx?.quoteCurrency?.symbol
-                  ? trx?.quoteCurrency?.symbol &&
-                    trx?.sellCurrency?.symbol == "WETH"
-                    ? "SELL"
-                    : "BUY"
-                  : "" || trx?.error == ""
-                  ? "Approved"
-                  : "Failed";
-                trx.sellAmount = trx?.sellAmount;
-
-                trx.hash = trx?.transaction?.hash || trx.hash;
-                trx.error =
-                  trx?.error != "" ? customError || trx?.error : trx?.error;
-                trx.apptoken =
-                  trx?.to?.address && trx?.error === ""
-                    ? await getApprovedToken(trx?.to?.address)
-                    : " ";
-                res(trx);
-              } catch (err) {
-                res({});
-              }
-            });
-        });
-        // promise
-        //   .then((d) => console.log("dd", d))
-        //   .catch((err) => console.log("p err", err));
-
-        allPromises.push(promise);
-      } catch (err) {
-        continue;
-      }
-    }
-    // console.log("11111modifydata", modifyData);
-    // console.log("all promsies start");
-    // console.log("all promsies", allPromises);
-    try {
-      let maxExecute = 100;
-      let i = -1;
-      while (i < allPromises.length) {
-        console.log("i", i);
-        let chunks = await Promise.all(
-          allPromises.slice(i + 1, i + 1 + maxExecute)
-        );
-        modifyData = [...modifyData, ...chunks];
-
-        // console.log("modifyData", modifyData.length, modifyData[0]);
-
-        i = maxExecute + (i + 1);
-      }
-      // modifyData= await Promise.all(allPromises);
-      // console.log(" modifydata",modifyData.length);
-
-      modifyData = _.reject(modifyData, _.isEmpty);
-      // console.log("alllll modifydata", modifyData.length);
-    } catch (error) {
-      // console.log("all err");
-    }
+    // console.log("modify data",modifyData)
 
     const uniqueSell = _.uniqBy(modifyData, "outToken").map(
       (trx) => trx.outToken
@@ -520,9 +389,9 @@ const writeSheet = async (
         token === "WETH"
           ? outAmout
           : _.sumBy(
-              _.filter(modifyData, { outToken: "WETH", inToken: token }),
-              "buyAmount"
-            );
+            _.filter(modifyData, { outToken: "WETH", inToken: token }),
+            "buyAmount"
+          );
 
       const inTokenFee = _.sumBy(
         _.filter(modifyData, { inToken: token }),
@@ -553,7 +422,11 @@ const writeSheet = async (
 
     // console.log("walletSheet2",  _.reject(walletSheet2, { token: 'WETH' }));
 
-    walletSheet2 = _.reject(walletSheet2, { token: "WETH" });
+    walletSheet2 = _.reject(walletSheet2, (obj) =>
+      _.includes(["WETH", "USDT", "USDC"], obj.token)
+    );
+
+    // { token: "WETH" }, { token: 'USDC' }, { token: 'USDT' });
 
     // console.log("walletSheet2",  walletSheet2);
 
@@ -562,7 +435,6 @@ const writeSheet = async (
     // console.log("getFinalData", modifyData);
     walletTrxSheet.addRows(modifyData); // Add data in walletTrxSheet
     walletProfitSheet.addRows(walletSheet2);
-
     let finalDataSheet = { wallets: `Wallet-${add}` };
     finalDataSheet.profit = _.sumBy(walletSheet2, "profitEth");
     finalDataSheet.fee = _.sumBy(walletSheet2, "fees");
@@ -575,24 +447,21 @@ const writeSheet = async (
     finalDataSheet.openTrade = _.size(
       _.filter(walletSheet2, (trx) => trx.tokenRemaining > 0)
     );
-    finalDataSheet.expVsPro = finalDataSheet.profit / finalDataSheet.expense;
+    finalDataSheet.expVsPro =
+      finalDataSheet.profit / finalDataSheet.expenseWithFee;
 
-    finalDataSheet.approved = _.sumBy(
-      _.filter(modifyData, { error: "", type: "Approved" }),
-      "fee"
-    );
-    console.log(
-      "feeeeeee",
-      modifyData[0],
-      _.sumBy(_.filter(modifyData, { error: "", type: "" }), "fee")
-    );
-    finalDataSheet.failed = _.sumBy(
-      _.filter(
-        modifyData,
-        (trx) => trx.type === "Failed" && !_.isEmpty(trx.error)
-      ),
-      "fee"
-    );
+    finalDataSheet.approved =
+      _.sumBy(_.filter(modifyData, { error: "", type: "Approved" }), "fee") +
+      finalDataSheet.expenseWithFee;
+
+    finalDataSheet.failed =
+      _.sumBy(
+        _.filter(
+          modifyData,
+          (trx) => trx.type === "Failed" && !_.isEmpty(trx.error)
+        ),
+        "fee"
+      ) + finalDataSheet.expenseWithFee;
 
     finalSheet.addRow(finalDataSheet);
     const columnIndex = 10;

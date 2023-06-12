@@ -18,14 +18,14 @@ const createWorkSheet = async (req, res, next) => {
     for (let add of address) {
       console.log("aa",add)
     const result = await sheetService( add, from, to );
-    // console.log("result",result.data)
+    console.log("result back")
 
 
-    if (result.data) {
+    if (result?.data) {
       const walletTrxSheet = workbook.addWorksheet(`wallet-${add}`); 
       const walletProfitSheet = workbook.addWorksheet(`wallet-Token-${add}`);
 
-      const res = await writeSheet( walletTrxSheet,walletProfitSheet,finalSheet,add,result.data );
+      const res = await writeSheet( walletTrxSheet,walletProfitSheet,finalSheet,add,result.data);
       console.log("result of write sheet",res)
 
       try {
@@ -38,6 +38,9 @@ const createWorkSheet = async (req, res, next) => {
         console.log(err)
        }
    
+    }
+    else{
+      res.send(result?.error)
     }
 
  }
@@ -54,7 +57,7 @@ const createWorkSheet = async (req, res, next) => {
     return workbook.xlsx.write(res).then(function () {
       res.status(200).send();
     });
-    if (result.ex) throw result.ex;
+    if (result.error) throw result.ex;
 
     // if (result.hasConflict)
     //   throw createError(StatusCodes.CONFLICT, result.conflictMessage);
