@@ -30,6 +30,45 @@ const sheetService = async (address, from, to, result = {}) => {
   const logIface = new ethers.utils.Interface(["event Swap( address indexed sender, uint amount0In, uint amount1In, uint amount0Out, uint amount1Out, address indexed to)"]);
 
   const apiKey = "M9TKZC1D3W8WPPPYD1TP41DTKITVNPMNTG";
+  const abi = [
+    {
+      "constant": true,
+      "inputs": [],
+      "name": "symbol",
+      "outputs": [
+        {
+          "name": "",
+          "type": "string"
+        }
+      ],
+      "payable": false,
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "constant": true,
+      "inputs": [],
+      "name": "decimals",
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "payable": false,
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ];
+
+
+
+  const provider = new ethers.providers.AlchemyProvider(
+    1,
+    "tZznxykoI5rNbgmU_rjLTik6sCsPyW8o"
+  );
+  var customWsProvider = new ethers.providers.WebSocketProvider(wss);
+
 
   try {
     try {
@@ -63,11 +102,8 @@ const sheetService = async (address, from, to, result = {}) => {
           let response = await axios.get(
             `https://api.etherscan.io/api?module=account&action=txlist&address=${address}&startblock=${startBlock}&endblock=${endBlock}&sort=asc&apikey=${apiKey}`
           );
-          console.log(
-            "response",
-            response?.data?.result[0],
-            response?.data?.result?.length
-          );
+
+          //if data found
           if (response?.data?.result?.length) {
 
 
@@ -81,32 +117,12 @@ const sheetService = async (address, from, to, result = {}) => {
 
             });
 
-            console.log(
-              "getDateData",
-              // getDateData[1152],
-              getDateData[1],
-              getDateData?.length
-            );
-
-            let firstSheetData = [];
-            let abi = ["function symbol() view returns (string)"];
-            const provider = new ethers.providers.AlchemyProvider(
-              1,
-              "tZznxykoI5rNbgmU_rjLTik6sCsPyW8o"
-            );
-            var customWsProvider = new ethers.providers.WebSocketProvider(wss);
 
 
-
-
-
-
-
-
-
-
+            //trx modify and find trx type 
             const decodeTransaction = async (trx) => {
               try {
+                //if approved trx
                 if (trx.functionName.substring(0, trx.functionName.indexOf("(")) == 'approve' && trx.functionName != '') {
                   let contract = new ethers.Contract(trx.to, abi, provider);
                   trx.apptoken = await contract.symbol();
@@ -115,24 +131,22 @@ const sheetService = async (address, from, to, result = {}) => {
                   trx.timestamp = moment.unix(trx.timeStamp).utc().format(
                     "YYYY-MM-DD hh:mm:ss"
                   );
-                  // firstSheetData.push(trx)
+                  trx.type = 'Approved'
                 }
+
+                // if failed trx
                 else if (trx.isError == '1' && trx.functionName != '') {
                   trx.timestamp = moment.unix(trx.timeStamp).utc().format(
                     "YYYY-MM-DD hh:mm:ss"
                   );
                   trx.error = "execution reverted"
                   const transactionFee = parseInt(trx?.gasPrice) * parseInt(trx?.gasUsed);
-                  trx.fee = transactionFee / 10 ** 18
-
-
+                  trx.fee = transactionFee / 10 ** 18;
+                  trx.type = 'Failed'
                 }
 
-
-
-
+                //if dex buy sell V2  trx
                 else if (trx?.to != '0xef1c6e67703c7bd7107eed8303fbe6ec2554bf6b' && trx.functionName != '') {
-
                   let decoded = iface.decodeFunctionData(
                     trx.functionName.substring(0, trx.functionName.indexOf("(")),
                     trx?.input
@@ -140,90 +154,68 @@ const sheetService = async (address, from, to, result = {}) => {
                   trx.timestamp = moment.unix(trx.timeStamp).utc().format(
                     "YYYY-MM-DD hh:mm:ss"
                   );
-
-                  // trx.buyAmount = decoded?.amountIn?.toString() || "nill"
-                  // trx.sellAmount = decoded?.amountOut?.toString() || "nill"
-                  // console.log("decoded", decoded)
-
                   let outTokenContract = new ethers.Contract(
                     decoded?.path[0],
                     abi,
                     provider
                   );
+                  let inTokenContract = new ethers.Contract(decoded?.path[1], abi, provider);
+
+                  let outDecimal = 18;
+                  let inDecimal = 18;
+
+                  //decode symbol and decimals
                   try {
+                    outDecimal = await outTokenContract.decimals();
+                    inDecimal = await inTokenContract.decimals();
+                    trx.outToken = await outTokenContract.symbol() || '';
+                  } catch (error) {
+                    console.log("decode symbol and decimals error", error);
+                    throw error
 
-                    const receipt = await customWsProvider.getTransactionReceipt(trx.hash);
-                    // console.log("receipt", receipt);
+                  }
 
-
+                  //trx logs get and decode
+                  try {
+                    const receipt = await provider.getTransactionReceipt(trx.hash);
+                    // console.log("reciptt", receipt)
 
                     const logs = receipt.logs.filter(log => log?.topics[0] == '0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822');
-
                     const lastObject = _.last(logs);
-
-
-
                     const decodedLog = logIface.parseLog(lastObject);
-                    trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() : ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString();
-                    trx.sellAmount = ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() : ethers.BigNumber.from(decodedLog?.args?.amount0Out?._hex).toString();
-                  
-
-
+                    trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() / 10 ** outDecimal : ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal;
+                    trx.sellAmount = ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() / 10 ** inDecimal : ethers.BigNumber.from(decodedLog?.args?.amount0Out?._hex).toString() / 10 ** inDecimal;
                   } catch (error) {
-                    console.log("error full log log",error)
+                    console.log("trx logs get and decode", error,trx.hash)
 
                     throw error
 
                   }
 
-
-
-
-
-
-
-                  let inTokenContract = new ethers.Contract(decoded?.path[1], abi, provider);
-                  trx.outToken = await outTokenContract.symbol() || '';
                   if (_.includes(['WETH', 'USDT', 'USDC'], trx?.outToken)) {
-                    trx.type = 'Buy'
+                    trx.type = 'BUY'
                   } else {
-                    trx.type = 'Sell'
+                    trx.type = 'SELL'
                   }
                   trx.inToken = await inTokenContract.symbol() || '';
                   const transactionFee = parseInt(trx?.gasPrice) * parseInt(trx?.gasUsed);
                   trx.fee = transactionFee / 10 ** 18
-
                   trx.function = trx.functionName.substring(0, trx.functionName.indexOf("("));
-                  trx.apptoken = "";
-
-
                 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
                 return trx;
               } catch (error) {
-                console.error('Error decoding transaction:', trx?.functionName);
+                console.error('Error decoding transaction:', error,trx?.functionName,trx.hash);
+                
                 return null;
+              
               }
             }
 
 
-
+            // trx batch processing
             const getDecodeTransactions = async (transactions) => {
-              const batchSize = 80; // Number of transactions to process in each batch
+              const batchSize = 100; // Number of transactions to process in each batch
               const batches = [];
 
               for (let i = 0; i < transactions.length; i += batchSize) {
@@ -246,9 +238,9 @@ const sheetService = async (address, from, to, result = {}) => {
 
 
 
-
+            //decode  trx 
             let decodeTransactions = await getDecodeTransactions(getDateData);
-            console.log('Decoded Transactions:', decodeTransactions.slice(0, 10));
+            // console.log('Decoded Transactions:', decodeTransactions.slice(0, 10));
 
 
 
@@ -338,29 +330,10 @@ const writeSheet = async (
       { header: "Approval Fee Spent", key: "approved", width: 20 },
       { header: "Fee Spent in Failed Txs", key: "failed", width: 20 },
     ];
-    console.log("data", data.length)
+    // console.log("data", data.length, data.slice(0, 10))
     let modifyData = data;
-    let ethersData = "";
-    let allPromises = [];
-    // console.log("writeSheet",data[0]);
 
-    // for (let trx of data) {
-    //   // console.log("writeSheet",trx.timeStamp, moment.unix(trx.timeStamp).format(
-    //   //   "YYYY-MM-DD hh:mm:ss"
-    //   // ));
 
-    //   trx.timestamp = moment.unix(trx.timeStamp).utc().format(
-    //     "YYYY-MM-DD hh:mm:ss"
-    //   );
-    //   trx.fee = trx?.gasPrice;
-
-    //   trx.hash = trx.hash;
-    //   trx.function = trx.functionName.substring(0, trx.functionName.indexOf("("));
-    //   trx.apptoken = "";
-    //   modifyData.push(trx);
-    // }
-
-    // console.log("modify data",modifyData)
 
     const uniqueSell = _.uniqBy(modifyData, "outToken").map(
       (trx) => trx.outToken
