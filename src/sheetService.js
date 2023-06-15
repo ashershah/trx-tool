@@ -28,7 +28,10 @@ const sheetService = async (address, from, to, result = {}) => {
     "function approve(address _spender, uint256 _value)",
   ]);
   const logIface = new ethers.utils.Interface(["event Swap( address indexed sender, uint amount0In, uint amount1In, uint amount0Out, uint amount1Out, address indexed to)"]);
-
+  const provider = new ethers.providers.AlchemyProvider(
+    1,
+    "tZznxykoI5rNbgmU_rjLTik6sCsPyW8o"
+  );
   const apiKey = "M9TKZC1D3W8WPPPYD1TP41DTKITVNPMNTG";
   const abi = [
     {
@@ -61,12 +64,62 @@ const sheetService = async (address, from, to, result = {}) => {
     }
   ];
 
+  const factoryAbi = [
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "tokenA",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "tokenB",
+          "type": "address"
+        }
+      ],
+      "name": "getPair",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "pair",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ];
+  const transferAbi = new ethers.utils.Interface([
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "name": "from",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "name": "to",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "name": "value",
+          "type": "uint256"
+        }
+      ],
+      "name": "Transfer",
+      "type": "event"
+    }
+  ]);
 
 
-  const provider = new ethers.providers.AlchemyProvider(
-    1,
-    "tZznxykoI5rNbgmU_rjLTik6sCsPyW8o"
-  );
+
+  let factoryCntract = new ethers.Contract("0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f", factoryAbi, provider);
+
+
   var customWsProvider = new ethers.providers.WebSocketProvider(wss);
 
 
@@ -118,7 +171,6 @@ const sheetService = async (address, from, to, result = {}) => {
             });
 
 
-
             //trx modify and find trx type 
             const decodeTransaction = async (trx) => {
               try {
@@ -136,10 +188,19 @@ const sheetService = async (address, from, to, result = {}) => {
 
                 // if failed trx
                 else if (trx.isError == '1' && trx.functionName != '') {
+                  let customError = ''
+                  // if(){
+                  try {
+                    const response = await axios.get(`https://api.tenderly.co/api/v1/public-contract/1/tx/${trx.hash}`);
+                    console.log("response", response?.data, response?.data?.error_message);
+                    customError = response?.data?.error_message
+                  } catch (err) {
+                    console.log("custtom error", err)
+                  }
                   trx.timestamp = moment.unix(trx.timeStamp).utc().format(
                     "YYYY-MM-DD hh:mm:ss"
                   );
-                  trx.error = "execution reverted"
+                  trx.error = customError || "execution reverted"
                   const transactionFee = parseInt(trx?.gasPrice) * parseInt(trx?.gasUsed);
                   trx.fee = transactionFee / 10 ** 18;
                   trx.type = 'Failed'
@@ -170,26 +231,7 @@ const sheetService = async (address, from, to, result = {}) => {
                     inDecimal = await inTokenContract.decimals();
                     trx.outToken = await outTokenContract.symbol() || '';
                   } catch (error) {
-                    console.log("decode symbol and decimals error", error);
-                    throw error
-
-                  }
-
-                  //trx logs get and decode
-                  try {
-                    const receipt = await provider.getTransactionReceipt(trx.hash);
-                    // console.log("reciptt", receipt)
-
-                    const logs = receipt.logs.filter(log => log?.topics[0] == '0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822');
-                    const lastObject = _.last(logs);
-                    const decodedLog = logIface.parseLog(lastObject);
-                    trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() / 10 ** outDecimal : ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal;
-                    trx.sellAmount = ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() / 10 ** inDecimal : ethers.BigNumber.from(decodedLog?.args?.amount0Out?._hex).toString() / 10 ** inDecimal;
-                  } catch (error) {
-                    console.log("trx logs get and decode", error,trx.hash)
-
-                    throw error
-
+                    console.log("decode symbol and decimals error", error)
                   }
 
                   if (_.includes(['WETH', 'USDT', 'USDC'], trx?.outToken)) {
@@ -197,25 +239,105 @@ const sheetService = async (address, from, to, result = {}) => {
                   } else {
                     trx.type = 'SELL'
                   }
+
+                  // console.log("decoded", decoded.path)
+
+
+
+
+
+                  //trx logs get and decode
+                  try {
+                    const receipt = await customWsProvider.getTransactionReceipt(trx.hash);
+                    const logs = receipt.logs.filter(log => log?.topics[0] == '0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822');
+                    const lastObject = _.last(logs);
+                    let taxValue = 0;
+                    try {
+
+                      const pairAddress = await factoryCntract.getPair(decoded?.path[0], decoded?.path[1]);
+                      if (trx?.type == 'BUY') {
+
+
+                        const filteredArray = _.filter(receipt?.logs, obj =>
+                          obj.address == decoded?.path[1] &&
+                          obj.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' &&
+                          ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[1]) == pairAddress &&
+                          ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[2]) != decoded?.to
+                        );
+
+                        console.log("factoryv errorrr", trx.hash)
+                        if (filteredArray.length > 0) {
+                          let tax = transferAbi.parseLog(filteredArray[0]);
+                          taxValue = tax.args.value.toString() / 10 ** inDecimal
+                          console.log(taxValue);
+                        }
+
+
+                      }
+
+                      if (trx?.type == 'SELL') {
+
+
+                        const filteredArray = _.filter(receipt?.logs, obj =>
+                          obj.address == decoded?.path[0] &&
+                          obj.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' &&
+                          ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[1]) == decoded?.to &&
+                          ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[2]) != pairAddress
+                        );
+
+                        console.log("factoryv errorrr", trx.hash)
+                        if (filteredArray.length > 0) {
+                          let tax = transferAbi.parseLog(filteredArray[0]);
+                          taxValue = tax.args.value.toString() / 10 ** outDecimal
+                          console.log(taxValue);
+                        }
+                        // console.log("pairAddress",pairAddress,decoded.path,filteredArray, );
+
+
+                      }
+
+
+                    } catch (error) {
+                      console.log("factoryv errorrr", error)
+                    }
+                    const decodedLog = logIface.parseLog(lastObject);
+                    if (trx?.type == 'SELL') {
+                      console.log(" hex value", ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal + taxValue, ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() + taxValue)
+
+                      trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() / 10 ** outDecimal + taxValue : ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal + taxValue;
+                      trx.sellAmount = ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() / 10 ** inDecimal : ethers.BigNumber.from(decodedLog?.args?.amount0Out?._hex).toString() / 10 ** inDecimal;
+
+                    }
+                    if (trx?.type == 'BUY') {
+
+                      trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() / 10 ** outDecimal : ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal;
+                      trx.sellAmount = ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() / 10 ** inDecimal - taxValue : ethers.BigNumber.from(decodedLog?.args?.amount0Out?._hex).toString() / 10 ** inDecimal - taxValue;
+
+                    }
+                  } catch (error) {
+                    console.log("trx logs get and decode", error)
+
+                    throw error
+
+                  }
+
+
                   trx.inToken = await inTokenContract.symbol() || '';
                   const transactionFee = parseInt(trx?.gasPrice) * parseInt(trx?.gasUsed);
                   trx.fee = transactionFee / 10 ** 18
-                  trx.function = trx.functionName.substring(0, trx.functionName.indexOf("("));
                 }
 
                 return trx;
               } catch (error) {
-                console.error('Error decoding transaction:', error,trx?.functionName,trx.hash);
-                
+                console.error('Error decoding transaction:', trx?.functionName, trx.hash);
                 return null;
-              
               }
             }
 
 
             // trx batch processing
             const getDecodeTransactions = async (transactions) => {
-              const batchSize = 100; // Number of transactions to process in each batch
+              const batchSize = 80; // Number of transactions to process in each batch
               const batches = [];
 
               for (let i = 0; i < transactions.length; i += batchSize) {
@@ -297,12 +419,7 @@ const writeSheet = async (
         header: "Error in case of failed transaction",
         key: "error",
         width: 50,
-      },
-      {
-        header: "Function",
-        key: "function",
-        width: 50,
-      },
+      }
     ];
     walletProfitSheet.columns = [
       { header: "List Tokens", key: "token", width: 20 },
@@ -424,14 +541,17 @@ const writeSheet = async (
       finalDataSheet.profit / finalDataSheet.expenseWithFee;
 
     finalDataSheet.approved =
-      _.sumBy(_.filter(modifyData, { error: "", type: "Approved" }), "fee") +
+      _.sumBy(_.filter(
+        modifyData,
+        (trx) => trx.type === "Approved"
+      ), "fee") +
       finalDataSheet.expenseWithFee;
 
     finalDataSheet.failed =
       _.sumBy(
         _.filter(
           modifyData,
-          (trx) => trx.type === "Failed" && !_.isEmpty(trx.error)
+          (trx) => trx.type === "Failed"
         ),
         "fee"
       ) + finalDataSheet.expenseWithFee;
@@ -466,3 +586,6 @@ const writeSheet = async (
 };
 
 module.exports = { sheetService, writeSheet };
+
+
+
