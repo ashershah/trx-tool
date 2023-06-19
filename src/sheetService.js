@@ -28,6 +28,8 @@ const sheetService = async (address, from, to, result = {}) => {
     "function approve(address _spender, uint256 _value)",
   ]);
   const logIface = new ethers.utils.Interface(["event Swap( address indexed sender, uint amount0In, uint amount1In, uint amount0Out, uint amount1Out, address indexed to)"]);
+  const buyLogIface = new ethers.utils.Interface(["event Transfer(address indexed from, address indexed to, uint256 value)"]);
+
   const provider = new ethers.providers.AlchemyProvider(
     1,
     "tZznxykoI5rNbgmU_rjLTik6sCsPyW8o"
@@ -129,7 +131,7 @@ const sheetService = async (address, from, to, result = {}) => {
       //convert timestamp to block number
       let subtractedDate = moment(from, 'YYYY-MM-DD').subtract(1, 'day').format('YYYY-MM-DD');
       let addDate = moment(to, 'YYYY-MM-DD').add(1, 'day').format('YYYY-MM-DD');
-      console.log("sub add", subtractedDate, addDate);
+      // console.log("sub add", subtractedDate, addDate);
 
       const startTime = '00:01:00';
       const endTime = '23:59:00';
@@ -192,7 +194,7 @@ const sheetService = async (address, from, to, result = {}) => {
                   // if(){
                   try {
                     const response = await axios.get(`https://api.tenderly.co/api/v1/public-contract/1/tx/${trx.hash}`);
-                    console.log("response", response?.data, response?.data?.error_message);
+                    // console.log("response", response?.data, response?.data?.error_message);
                     customError = response?.data?.error_message
                   } catch (err) {
                     console.log("custtom error", err)
@@ -231,7 +233,8 @@ const sheetService = async (address, from, to, result = {}) => {
                     inDecimal = await inTokenContract.decimals();
                     trx.outToken = await outTokenContract.symbol() || '';
                   } catch (error) {
-                    console.log("decode symbol and decimals error", error)
+                    // console.log("decode symbol and decimals error", error,trx.hash)
+                    console.log("asharrrrrrrr      error")
                   }
 
                   if (_.includes(['WETH', 'USDT', 'USDC'], trx?.outToken)) {
@@ -245,35 +248,44 @@ const sheetService = async (address, from, to, result = {}) => {
 
 
 
-
                   //trx logs get and decode
                   try {
+                    const pairAddress = await factoryCntract.getPair(decoded?.path[0], decoded?.path[1]);
+
                     const receipt = await customWsProvider.getTransactionReceipt(trx.hash);
                     const logs = receipt.logs.filter(log => log?.topics[0] == '0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822');
-                    const lastObject = _.last(logs);
+                    const buyLogs = _.filter(receipt?.logs, obj =>
+                      obj.address == decoded?.path[1] &&
+                      obj.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' &&
+                      ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[1]) == pairAddress &&
+                      ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[2]) == decoded?.to
+                    );
+
+                    const lastSObject = _.last(logs);
+                    const lastBObject = _.last(buyLogs);
                     let taxValue = 0;
                     try {
 
-                      const pairAddress = await factoryCntract.getPair(decoded?.path[0], decoded?.path[1]);
-                      if (trx?.type == 'BUY') {
+                      // if (trx?.type == 'BUY') {
 
 
-                        const filteredArray = _.filter(receipt?.logs, obj =>
-                          obj.address == decoded?.path[1] &&
-                          obj.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' &&
-                          ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[1]) == pairAddress &&
-                          ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[2]) != decoded?.to
-                        );
+                      //   const filteredArray = _.filter(receipt?.logs, obj =>
+                      //     obj.address == decoded?.path[1] &&
+                      //     obj.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' &&
+                      //     ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[1]) == pairAddress &&
+                      //     ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[2]) != decoded?.to
+                      //   );
 
-                        console.log("factoryv errorrr", trx.hash)
-                        if (filteredArray.length > 0) {
-                          let tax = transferAbi.parseLog(filteredArray[0]);
-                          taxValue = tax.args.value.toString() / 10 ** inDecimal
-                          console.log(taxValue);
-                        }
+                      //   // console.log("factoryv errorrr", trx.hash)
+                      //   if (filteredArray.length > 0) {
+                      //     let tax = transferAbi.parseLog(filteredArray[0]);
+                      //     taxValue = tax.args.value.toString() / 10 ** inDecimal;
+                      //     trx.taxValue = tax.args.value.toString() / 10 ** inDecimal || "no"
+                      //     // console.log(taxValue);
+                      //   }
 
 
-                      }
+                      // }
 
                       if (trx?.type == 'SELL') {
 
@@ -284,12 +296,12 @@ const sheetService = async (address, from, to, result = {}) => {
                           ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[1]) == decoded?.to &&
                           ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[2]) != pairAddress
                         );
-
-                        console.log("factoryv errorrr", trx.hash)
+                      
                         if (filteredArray.length > 0) {
                           let tax = transferAbi.parseLog(filteredArray[0]);
                           taxValue = tax.args.value.toString() / 10 ** outDecimal
-                          console.log(taxValue);
+                          trx.taxValue = tax.args.value.toString() / 10 ** outDecimal || 'no'
+                          // console.log(taxValue);
                         }
                         // console.log("pairAddress",pairAddress,decoded.path,filteredArray, );
 
@@ -298,20 +310,29 @@ const sheetService = async (address, from, to, result = {}) => {
 
 
                     } catch (error) {
-                      console.log("factoryv errorrr", error)
+                      // console.log("factoryv errorrr", error)
                     }
-                    const decodedLog = logIface.parseLog(lastObject);
+                                          // console.log("decodedLog", buyLogs)
+                                          let decodedLog = logIface.parseLog(lastSObject);
+
                     if (trx?.type == 'SELL') {
-                      console.log(" hex value", ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal + taxValue, ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() + taxValue)
+
+                      // console.log(" hex value", ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal + taxValue, ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() + taxValue)
 
                       trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() / 10 ** outDecimal + taxValue : ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal + taxValue;
                       trx.sellAmount = ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() / 10 ** inDecimal : ethers.BigNumber.from(decodedLog?.args?.amount0Out?._hex).toString() / 10 ** inDecimal;
 
                     }
                     if (trx?.type == 'BUY') {
+                      
+                      console.log(" buy decode")
 
+                      let buyTransfer = buyLogIface.parseLog(lastBObject);
+                      console.log("buy decode", ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() )
                       trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() / 10 ** outDecimal : ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal;
-                      trx.sellAmount = ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() / 10 ** inDecimal - taxValue : ethers.BigNumber.from(decodedLog?.args?.amount0Out?._hex).toString() / 10 ** inDecimal - taxValue;
+                      // trx.sellAmount = ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() / 10 ** inDecimal - taxValue : ethers.BigNumber.from(decodedLog?.args?.amount0Out?._hex).toString() / 10 ** inDecimal - taxValue;
+                      trx.sellAmount = ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() ? ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() / 10 ** inDecimal : "nill";
+                      console.log(" after buy")
 
                     }
                   } catch (error) {
@@ -329,7 +350,7 @@ const sheetService = async (address, from, to, result = {}) => {
 
                 return trx;
               } catch (error) {
-                console.error('Error decoding transaction:', trx?.functionName, trx.hash);
+                console.error('Error decoding transaction:', trx.hash);
                 return null;
               }
             }
@@ -414,6 +435,7 @@ const writeSheet = async (
       { header: "In Amount", key: "sellAmount", width: 20 },
       { header: "Out Token", key: "outToken", width: 20 },
       { header: "Out Amount", key: "buyAmount", width: 20 },
+      // { header: "Tax Amount", key: "taxValue", width: 20 },
       { header: "Approved Token", key: "apptoken", width: 50 },
       {
         header: "Error in case of failed transaction",
@@ -482,7 +504,7 @@ const writeSheet = async (
             _.filter(modifyData, { outToken: "WETH", inToken: token }),
             "buyAmount"
           );
-
+console.log("wethout",wethOut)
       const inTokenFee = _.sumBy(
         _.filter(modifyData, { inToken: token }),
         "fee"
@@ -510,26 +532,29 @@ const writeSheet = async (
       };
     });
 
-    // console.log("walletSheet2",  _.reject(walletSheet2, { token: 'WETH' }));
+    // console.log("1 walletSheet2",walletSheet2  );
 
-    walletSheet2 = _.reject(walletSheet2, (obj) =>
+   let walletSheet2Exclude = _.reject(walletSheet2, (obj) =>
       _.includes(["WETH", "USDT", "USDC"], obj.token)
     );
+    // console.log("2 walletSheet2",walletSheet2  );
 
-    // { token: "WETH" }, { token: 'USDC' }, { token: 'USDT' });
-
-    // console.log("walletSheet2",  walletSheet2);
-
-    // console.log("modifydata", uniqueBuy, uniqueSell, finalTokens);
-
-    // console.log("getFinalData", modifyData);
     walletTrxSheet.addRows(modifyData); // Add data in walletTrxSheet
-    walletProfitSheet.addRows(walletSheet2);
+    walletProfitSheet.addRows(walletSheet2Exclude);
     let finalDataSheet = { wallets: `Wallet-${add}` };
     finalDataSheet.profit = _.sumBy(walletSheet2, "profitEth");
     finalDataSheet.fee = _.sumBy(walletSheet2, "fees");
     finalDataSheet.expense = _.sumBy(walletSheet2, "wethOut");
-    finalDataSheet.expenseWithFee = finalDataSheet.expense + finalDataSheet.fee;
+    finalDataSheet.expenseWithFee = finalDataSheet.expense + finalDataSheet.fee + _.sumBy(_.filter(
+      modifyData,
+      (trx) => trx.type === "Approved"
+    ), "fee") +  _.sumBy(
+      _.filter(
+        modifyData,
+        (trx) => trx.type === "Failed"
+      ),
+      "fee"
+    );
     finalDataSheet.buy = _.size(_.filter(modifyData, { type: "BUY" }));
 
     finalDataSheet.sell = _.size(_.filter(modifyData, { type: "SELL" }));
@@ -546,7 +571,10 @@ const writeSheet = async (
         (trx) => trx.type === "Approved"
       ), "fee") +
       finalDataSheet.expenseWithFee;
-
+console.log("feeeeee",  _.sumBy(_.filter(
+  modifyData,
+  (trx) => trx.type === "Approved"
+), "fee"),"weth out", _.sumBy(walletSheet2, "wethOut"),"feee",_.sumBy(walletSheet2, "fees"))
     finalDataSheet.failed =
       _.sumBy(
         _.filter(
