@@ -294,7 +294,7 @@ const sheetService = async (address, from, to, result = {}) => {
                           ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[1]) == decoded?.to &&
                           ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[2]) != pairAddress
                         );
-                      
+
                         if (filteredArray.length > 0) {
                           let tax = transferAbi.parseLog(filteredArray[0]);
                           taxValue = tax.args.value.toString() / 10 ** outDecimal
@@ -310,8 +310,8 @@ const sheetService = async (address, from, to, result = {}) => {
                     } catch (error) {
                       // console.log("factoryv errorrr", error)
                     }
-                                          // console.log("decodedLog", buyLogs)
-                                          let decodedLog = logIface.parseLog(lastSObject);
+                    // console.log("decodedLog", buyLogs)
+                    let decodedLog = logIface.parseLog(lastSObject);
 
                     if (trx?.type == 'SELL') {
 
@@ -322,7 +322,7 @@ const sheetService = async (address, from, to, result = {}) => {
 
                     }
                     if (trx?.type == 'BUY') {
-                      
+
 
                       let buyTransfer = buyLogIface.parseLog(lastBObject);
                       trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() / 10 ** outDecimal : ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal;
@@ -353,7 +353,7 @@ const sheetService = async (address, from, to, result = {}) => {
 
             // trx batch processing
             const getDecodeTransactions = async (transactions) => {
-              const batchSize = 80; // Number of transactions to process in each batch
+              const batchSize = 20; // Number of transactions to process in each batch
               const batches = [];
 
               for (let i = 0; i < transactions.length; i += batchSize) {
@@ -366,8 +366,13 @@ const sheetService = async (address, from, to, result = {}) => {
               for (let i = 0; i < batches.length; i++) {
                 const batch = batches[i];
                 const promises = batch.map(transaction => decodeTransaction(transaction));
-                const decodedBatch = await Promise.all(promises);
-                decodedTransactions.push(...decodedBatch);
+                try {
+                  const decodedBatch = await Promise.all(promises);
+                  decodedTransactions.push(...decodedBatch);
+                } catch (error) {
+                  console.error('Error decoding transactions:', error);
+                  throw error;
+                }
               }
 
               return decodedTransactions;
@@ -463,6 +468,7 @@ const writeSheet = async (
       { header: "# Open Trades", key: "openTrade", width: 20 },
       { header: "Approval Fee Spent", key: "approved", width: 20 },
       { header: "Fee Spent in Failed Txs", key: "failed", width: 20 },
+      { header: "Failed #", key: "failedCountt", width: 20 },
     ];
     // console.log("data", data.length, data.slice(0, 10))
     let modifyData = data;
@@ -536,7 +542,7 @@ const writeSheet = async (
     walletTrxSheet.addRows(modifyData); // Add data in walletTrxSheet
     walletProfitSheet.addRows(walletSheet2);
     let finalDataSheet = { wallets: `Wallet-${add}` };
-    finalDataSheet.profit = _.sumBy(walletSheet2, "profitEth") -  _.sumBy(_.filter(
+    finalDataSheet.profit = _.sumBy(walletSheet2, "profitEth") - _.sumBy(_.filter(
       modifyData,
       (trx) => trx.type === "Approved"
     ), "fee") - _.sumBy(
@@ -551,7 +557,7 @@ const writeSheet = async (
     finalDataSheet.expenseWithFee = finalDataSheet.expense + finalDataSheet.fee + _.sumBy(_.filter(
       modifyData,
       (trx) => trx.type === "Approved"
-    ), "fee") +  _.sumBy(
+    ), "fee") + _.sumBy(
       _.filter(
         modifyData,
         (trx) => trx.type === "Failed"
@@ -582,6 +588,7 @@ const writeSheet = async (
         ),
         "fee"
       );
+    finalDataSheet.failedCountt = _.countBy(modifyData, 'type')['Failed'] || 0;
 
     finalSheet.addRow(finalDataSheet);
     const columnIndex = 10;
