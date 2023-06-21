@@ -9,7 +9,6 @@ const { ethers, providers, Wallet } = require("ethers");
 const { get } = require("http");
 
 const sheetService = async (address, from, to, result = {}) => {
-  console.log("sheetService");
   var wss = "wss://eth-mainnet.g.alchemy.com/v2/tZznxykoI5rNbgmU_rjLTik6sCsPyW8o"; // mainnet
 
   const iface = new ethers.utils.Interface([
@@ -234,7 +233,6 @@ const sheetService = async (address, from, to, result = {}) => {
                     trx.outToken = await outTokenContract.symbol() || '';
                   } catch (error) {
                     // console.log("decode symbol and decimals error", error,trx.hash)
-                    console.log("asharrrrrrrr      error")
                   }
 
                   if (_.includes(['WETH', 'USDT', 'USDC'], trx?.outToken)) {
@@ -325,14 +323,11 @@ const sheetService = async (address, from, to, result = {}) => {
                     }
                     if (trx?.type == 'BUY') {
                       
-                      console.log(" buy decode")
 
                       let buyTransfer = buyLogIface.parseLog(lastBObject);
-                      console.log("buy decode", ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() )
                       trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() / 10 ** outDecimal : ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal;
                       // trx.sellAmount = ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() / 10 ** inDecimal - taxValue : ethers.BigNumber.from(decodedLog?.args?.amount0Out?._hex).toString() / 10 ** inDecimal - taxValue;
                       trx.sellAmount = ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() ? ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() / 10 ** inDecimal : "nill";
-                      console.log(" after buy")
 
                     }
                   } catch (error) {
@@ -504,7 +499,6 @@ const writeSheet = async (
             _.filter(modifyData, { outToken: "WETH", inToken: token }),
             "buyAmount"
           );
-console.log("wethout",wethOut)
       const inTokenFee = _.sumBy(
         _.filter(modifyData, { inToken: token }),
         "fee"
@@ -513,11 +507,11 @@ console.log("wethout",wethOut)
         _.filter(modifyData, { outToken: token }),
         "fee"
       );
-      const fees = inTokenFee + outTokenFee;
+      const fees = (inAmount == 0) ? 0 : (inTokenFee + outTokenFee);
 
       const avgSellPrice =
         wethIn / uniqueSell.filter((trx) => trx !== undefined).length;
-      const profitEth = wethIn - wethOut - fees;
+      const profitEth = (inAmount == 0) ? 0 : (wethIn - wethOut - fees);
       tokenRemaining = inAmount - outAmout;
       return {
         token: token,
@@ -534,15 +528,24 @@ console.log("wethout",wethOut)
 
     // console.log("1 walletSheet2",walletSheet2  );
 
-   let walletSheet2Exclude = _.reject(walletSheet2, (obj) =>
+    walletSheet2 = _.reject(walletSheet2, (obj) =>
       _.includes(["WETH", "USDT", "USDC"], obj.token)
     );
     // console.log("2 walletSheet2",walletSheet2  );
 
     walletTrxSheet.addRows(modifyData); // Add data in walletTrxSheet
-    walletProfitSheet.addRows(walletSheet2Exclude);
+    walletProfitSheet.addRows(walletSheet2);
     let finalDataSheet = { wallets: `Wallet-${add}` };
-    finalDataSheet.profit = _.sumBy(walletSheet2, "profitEth");
+    finalDataSheet.profit = _.sumBy(walletSheet2, "profitEth") -  _.sumBy(_.filter(
+      modifyData,
+      (trx) => trx.type === "Approved"
+    ), "fee") - _.sumBy(
+      _.filter(
+        modifyData,
+        (trx) => trx.type === "Failed"
+      ),
+      "fee"
+    );
     finalDataSheet.fee = _.sumBy(walletSheet2, "fees");
     finalDataSheet.expense = _.sumBy(walletSheet2, "wethOut");
     finalDataSheet.expenseWithFee = finalDataSheet.expense + finalDataSheet.fee + _.sumBy(_.filter(
@@ -569,12 +572,8 @@ console.log("wethout",wethOut)
       _.sumBy(_.filter(
         modifyData,
         (trx) => trx.type === "Approved"
-      ), "fee") +
-      finalDataSheet.expenseWithFee;
-console.log("feeeeee",  _.sumBy(_.filter(
-  modifyData,
-  (trx) => trx.type === "Approved"
-), "fee"),"weth out", _.sumBy(walletSheet2, "wethOut"),"feee",_.sumBy(walletSheet2, "fees"))
+      ), "fee");
+
     finalDataSheet.failed =
       _.sumBy(
         _.filter(
@@ -582,7 +581,7 @@ console.log("feeeeee",  _.sumBy(_.filter(
           (trx) => trx.type === "Failed"
         ),
         "fee"
-      ) + finalDataSheet.expenseWithFee;
+      );
 
     finalSheet.addRow(finalDataSheet);
     const columnIndex = 10;
