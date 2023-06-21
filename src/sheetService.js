@@ -353,7 +353,7 @@ const sheetService = async (address, from, to, result = {}) => {
 
             // trx batch processing
             const getDecodeTransactions = async (transactions) => {
-              const batchSize = 50; // Number of transactions to process in each batch
+              const batchSize = 20; // Number of transactions to process in each batch
               const batches = [];
 
               for (let i = 0; i < transactions.length; i += batchSize) {
