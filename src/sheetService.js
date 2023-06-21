@@ -353,7 +353,7 @@ const sheetService = async (address, from, to, result = {}) => {
 
             // trx batch processing
             const getDecodeTransactions = async (transactions) => {
-              const batchSize = 20; // Number of transactions to process in each batch
+              const batchSize = 10; // Number of transactions to process in each batch
               const batches = [];
 
               for (let i = 0; i < transactions.length; i += batchSize) {
@@ -379,7 +379,7 @@ const sheetService = async (address, from, to, result = {}) => {
 
                 if (true) {
                   console.log("awaitttt")
-                  await new Promise((resolve) => setTimeout(resolve, 1000));
+                  await new Promise((resolve) => setTimeout(resolve, 1500));
                   console.log("awaitttt finsishhh")
 
                    // Wait for 1 second
