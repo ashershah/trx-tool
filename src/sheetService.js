@@ -353,19 +353,22 @@ const sheetService = async (address, from, to, result = {}) => {
 
             // trx batch processing
             const getDecodeTransactions = async (transactions) => {
-              const batchSize = 20; // Number of transactions to process in each batch
+              const batchSize = 50; // Number of transactions to process in each batch
               const batches = [];
 
               for (let i = 0; i < transactions.length; i += batchSize) {
                 const batch = transactions.slice(i, i + batchSize);
                 batches.push(batch);
               }
+              console.log("batchhhhss",batches.length)
 
               const decodedTransactions = [];
 
               for (let i = 0; i < batches.length; i++) {
                 const batch = batches[i];
                 const promises = batch.map(transaction => decodeTransaction(transaction));
+               
+            
                 try {
                   const decodedBatch = await Promise.all(promises);
                   decodedTransactions.push(...decodedBatch);
@@ -373,8 +376,16 @@ const sheetService = async (address, from, to, result = {}) => {
                   console.error('Error decoding transactions:', error);
                   throw error;
                 }
-              }
 
+                if (true) {
+                  console.log("awaitttt")
+                  await new Promise((resolve) => setTimeout(resolve, 1000));
+                  console.log("awaitttt finsishhh")
+
+                   // Wait for 1 second
+                }
+              }
+          
               return decodedTransactions;
             }
 
