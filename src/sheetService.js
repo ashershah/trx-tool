@@ -331,7 +331,7 @@ const sheetService = async (address, from, to, result = {}) => {
 
                     }
                   } catch (error) {
-                    console.log("trx logs get and decode", error)
+                    console.log("trx logs get and decode", trx.hash,error)
 
                     throw error
 
@@ -353,14 +353,13 @@ const sheetService = async (address, from, to, result = {}) => {
 
             // trx batch processing
             const getDecodeTransactions = async (transactions) => {
-              const batchSize = 10; // Number of transactions to process in each batch
+              const batchSize = 5; // Number of transactions to process in each batch
               const batches = [];
 
               for (let i = 0; i < transactions.length; i += batchSize) {
                 const batch = transactions.slice(i, i + batchSize);
                 batches.push(batch);
               }
-              console.log("batchhhhss",batches.length)
 
               const decodedTransactions = [];
 
@@ -378,11 +377,8 @@ const sheetService = async (address, from, to, result = {}) => {
                 }
 
                 if (true) {
-                  console.log("awaitttt")
-                  await new Promise((resolve) => setTimeout(resolve, 1500));
-                  console.log("awaitttt finsishhh")
-
-                   // Wait for 1 second
+                  await new Promise((resolve) => setTimeout(resolve, 1000));
+                  
                 }
               }
           
@@ -530,6 +526,7 @@ const writeSheet = async (
         wethIn / uniqueSell.filter((trx) => trx !== undefined).length;
       const profitEth = (inAmount == 0) ? 0 : (wethIn - wethOut - fees);
       tokenRemaining = inAmount - outAmout;
+      
       return {
         token: token,
         inAmount,
