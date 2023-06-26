@@ -9,7 +9,7 @@ const { ethers, providers, Wallet } = require("ethers");
 const { get } = require("http");
 
 const sheetService = async (address, from, to, result = {}) => {
-  var wss = "wss://eth-mainnet.g.alchemy.com/v2/tZznxykoI5rNbgmU_rjLTik6sCsPyW8o"; // mainnet
+  // var wss = "wss://eth-mainnet.g.alchemy.com/v2/tZznxykoI5rNbgmU_rjLTik6sCsPyW8o"; // mainnet
 
   const iface = new ethers.utils.Interface([
     "function swapExactETHForTokens(uint256 amountOutMin, address[] path, address to, uint256 deadline)",
@@ -28,11 +28,12 @@ const sheetService = async (address, from, to, result = {}) => {
   ]);
   const logIface = new ethers.utils.Interface(["event Swap( address indexed sender, uint amount0In, uint amount1In, uint amount0Out, uint amount1Out, address indexed to)"]);
   const buyLogIface = new ethers.utils.Interface(["event Transfer(address indexed from, address indexed to, uint256 value)"]);
+  const provider = new ethers.providers.JsonRpcProvider('https://mainnet.infura.io/v3/ccd672837bb643d7a059effc74ae25cc');
 
-  const provider = new ethers.providers.AlchemyProvider(
-    1,
-    "tZznxykoI5rNbgmU_rjLTik6sCsPyW8o"
-  );
+  // const provider = new ethers.providers.AlchemyProvider(
+  //   1,
+  //   "tZznxykoI5rNbgmU_rjLTik6sCsPyW8o"
+  // );
   const apiKey = "M9TKZC1D3W8WPPPYD1TP41DTKITVNPMNTG";
   const abi = [
     {
@@ -121,7 +122,8 @@ const sheetService = async (address, from, to, result = {}) => {
   let factoryCntract = new ethers.Contract("0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f", factoryAbi, provider);
 
 
-  var customWsProvider = new ethers.providers.WebSocketProvider(wss);
+  // var provider = new ethers.providers.WebSocketProvider(wss);
+
 
 
   try {
@@ -250,7 +252,7 @@ const sheetService = async (address, from, to, result = {}) => {
                   try {
                     const pairAddress = await factoryCntract.getPair(decoded?.path[0], decoded?.path[1]);
 
-                    const receipt = await customWsProvider.getTransactionReceipt(trx.hash);
+                    const receipt = await provider.getTransactionReceipt(trx.hash);
                     const logs = receipt.logs.filter(log => log?.topics[0] == '0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822');
                     const buyLogs = _.filter(receipt?.logs, obj =>
                       obj.address == decoded?.path[1] &&
@@ -353,7 +355,7 @@ const sheetService = async (address, from, to, result = {}) => {
 
             // trx batch processing
             const getDecodeTransactions = async (transactions) => {
-              const batchSize = 4; // Number of transactions to process in each batch
+              const batchSize = 80; // Number of transactions to process in each batch
               const batches = [];
 
               for (let i = 0; i < transactions.length; i += batchSize) {
