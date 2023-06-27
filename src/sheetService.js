@@ -377,10 +377,7 @@ const sheetService = async (address, from, to, result = {}) => {
                   throw error;
                 }
 
-                if (true) {
-                  await new Promise((resolve) => setTimeout(resolve, 1000));
-                  
-                }
+               
               }
           
               return decodedTransactions;
