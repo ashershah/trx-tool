@@ -8,8 +8,8 @@ const _ = require("lodash");
 const { ethers, providers, Wallet } = require("ethers");
 const { get } = require("http");
 
-const sheetService = async (address, from, to, result = {}) => {
-  // var wss = "wss://eth-mainnet.g.alchemy.com/v2/tZznxykoI5rNbgmU_rjLTik6sCsPyW8o"; // mainnet
+const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/v3/ccd672837bb643d7a059effc74ae25cc', result = {}) => {
+  console.log("key", key)
 
   const iface = new ethers.utils.Interface([
     "function swapExactETHForTokens(uint256 amountOutMin, address[] path, address to, uint256 deadline)",
@@ -28,12 +28,9 @@ const sheetService = async (address, from, to, result = {}) => {
   ]);
   const logIface = new ethers.utils.Interface(["event Swap( address indexed sender, uint amount0In, uint amount1In, uint amount0Out, uint amount1Out, address indexed to)"]);
   const buyLogIface = new ethers.utils.Interface(["event Transfer(address indexed from, address indexed to, uint256 value)"]);
-  const provider = new ethers.providers.JsonRpcProvider('https://mainnet.infura.io/v3/ccd672837bb643d7a059effc74ae25cc');
+  const provider = new ethers.providers.JsonRpcProvider(`${key}`);
 
-  // const provider = new ethers.providers.AlchemyProvider(
-  //   1,
-  //   "tZznxykoI5rNbgmU_rjLTik6sCsPyW8o"
-  // );
+
   const apiKey = "M9TKZC1D3W8WPPPYD1TP41DTKITVNPMNTG";
   const abi = [
     {
@@ -122,7 +119,6 @@ const sheetService = async (address, from, to, result = {}) => {
   let factoryCntract = new ethers.Contract("0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f", factoryAbi, provider);
 
 
-  // var provider = new ethers.providers.WebSocketProvider(wss);
 
 
 
@@ -132,7 +128,6 @@ const sheetService = async (address, from, to, result = {}) => {
       //convert timestamp to block number
       let subtractedDate = moment(from, 'YYYY-MM-DD').subtract(1, 'day').format('YYYY-MM-DD');
       let addDate = moment(to, 'YYYY-MM-DD').add(1, 'day').format('YYYY-MM-DD');
-      // console.log("sub add", subtractedDate, addDate);
 
       const startTime = '00:01:00';
       const endTime = '23:59:00';
@@ -265,28 +260,6 @@ const sheetService = async (address, from, to, result = {}) => {
                     const lastBObject = _.last(buyLogs);
                     let taxValue = 0;
                     try {
-
-                      // if (trx?.type == 'BUY') {
-
-
-                      //   const filteredArray = _.filter(receipt?.logs, obj =>
-                      //     obj.address == decoded?.path[1] &&
-                      //     obj.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' &&
-                      //     ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[1]) == pairAddress &&
-                      //     ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[2]) != decoded?.to
-                      //   );
-
-                      //   // console.log("factoryv errorrr", trx.hash)
-                      //   if (filteredArray.length > 0) {
-                      //     let tax = transferAbi.parseLog(filteredArray[0]);
-                      //     taxValue = tax.args.value.toString() / 10 ** inDecimal;
-                      //     trx.taxValue = tax.args.value.toString() / 10 ** inDecimal || "no"
-                      //     // console.log(taxValue);
-                      //   }
-
-
-                      // }
-
                       if (trx?.type == 'SELL') {
 
 
@@ -301,9 +274,7 @@ const sheetService = async (address, from, to, result = {}) => {
                           let tax = transferAbi.parseLog(filteredArray[0]);
                           taxValue = tax.args.value.toString() / 10 ** outDecimal
                           trx.taxValue = tax.args.value.toString() / 10 ** outDecimal || 'no'
-                          // console.log(taxValue);
                         }
-                        // console.log("pairAddress",pairAddress,decoded.path,filteredArray, );
 
 
                       }
@@ -312,13 +283,9 @@ const sheetService = async (address, from, to, result = {}) => {
                     } catch (error) {
                       // console.log("factoryv errorrr", error)
                     }
-                    // console.log("decodedLog", buyLogs)
                     let decodedLog = logIface.parseLog(lastSObject);
 
                     if (trx?.type == 'SELL') {
-
-                      // console.log(" hex value", ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal + taxValue, ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() + taxValue)
-
                       trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() / 10 ** outDecimal + taxValue : ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal + taxValue;
                       trx.sellAmount = ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() / 10 ** inDecimal : ethers.BigNumber.from(decodedLog?.args?.amount0Out?._hex).toString() / 10 ** inDecimal;
 
@@ -332,7 +299,7 @@ const sheetService = async (address, from, to, result = {}) => {
 
                     }
                   } catch (error) {
-                    console.log("trx logs get and decode", trx.hash,error)
+                    console.log("trx logs get and decode", trx.hash, error)
 
                     throw error
 
@@ -343,6 +310,7 @@ const sheetService = async (address, from, to, result = {}) => {
                   const transactionFee = parseInt(trx?.gasPrice) * parseInt(trx?.gasUsed);
                   trx.fee = transactionFee / 10 ** 18
                 }
+             
 
                 return trx;
               } catch (error) {
@@ -367,8 +335,8 @@ const sheetService = async (address, from, to, result = {}) => {
               for (let i = 0; i < batches.length; i++) {
                 const batch = batches[i];
                 const promises = batch.map(transaction => decodeTransaction(transaction));
-               
-            
+
+
                 try {
                   const decodedBatch = await Promise.all(promises);
                   decodedTransactions.push(...decodedBatch);
@@ -377,9 +345,9 @@ const sheetService = async (address, from, to, result = {}) => {
                   throw error;
                 }
 
-               
+
               }
-          
+
               return decodedTransactions;
             }
 
@@ -388,12 +356,6 @@ const sheetService = async (address, from, to, result = {}) => {
 
             //decode  trx 
             let decodeTransactions = await getDecodeTransactions(getDateData);
-            // console.log('Decoded Transactions:', decodeTransactions.slice(0, 10));
-
-
-
-
-
             result.data = _.reject(decodeTransactions, obj => {
               return _.isNull(obj) || _.isEmpty(obj.functionName);
             });
@@ -524,7 +486,7 @@ const writeSheet = async (
         wethIn / uniqueSell.filter((trx) => trx !== undefined).length;
       const profitEth = (inAmount == 0) ? 0 : (wethIn - wethOut - fees);
       tokenRemaining = inAmount - outAmout;
-      
+
       return {
         token: token,
         inAmount,

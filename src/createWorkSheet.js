@@ -4,50 +4,44 @@ const API_KEY = "BQYwKrt1vg9lUe2b5Dz1tSz2rkBjQsll";
 const API_URL = `https://graphql.bitquery.io/`;
 var fs = require("fs");
 const excelJS = require("exceljs");
-const {sheetService,writeSheet} = require("./sheetService")
+const { sheetService, writeSheet } = require("./sheetService")
 
 const createWorkSheet = async (req, res, next) => {
-  const { address, from, to } = req.query;
-  console.log("in create worksheet",address)
+  const { address, from, to,key } = req.query;
+  console.log("in create worksheet", address)
   const workbook = new excelJS.Workbook(); // Create a new workbook
   const path = "./files"; // Path to download excel
   const finalSheet = workbook.addWorksheet('final-result');
+  console.log("aa", key)
 
   try {
 
     for (let add of address) {
-      console.log("aa",add)
-    const result = await sheetService( add, from, to );
-    console.log("result back")
+      const result = await sheetService(add, from, to, key);
+      if (result?.data) {
+        const walletTrxSheet = workbook.addWorksheet(`wallet-${add}`);
+        const walletProfitSheet = workbook.addWorksheet(`wallet-Token-${add}`);
 
+        const res = await writeSheet(walletTrxSheet, walletProfitSheet, finalSheet, add, result.data);
 
-    if (result?.data) {
-      const walletTrxSheet = workbook.addWorksheet(`wallet-${add}`); 
-      const walletProfitSheet = workbook.addWorksheet(`wallet-Token-${add}`);
+        try {
 
-      const res = await writeSheet( walletTrxSheet,walletProfitSheet,finalSheet,add,result.data);
-      console.log("result of write sheet",res)
+          await workbook.xlsx.writeFile(`${path}/history.xlsx`);
+          console.log("succesful");
+        } catch (err) {
+          console.log(err)
+        }
 
-      try {
+      }
+      else {
+        res.send(result?.error)
+      }
 
-        await workbook.xlsx.writeFile(`${path}/history.xlsx`);
-         console.log("succesful");
-   
-         // fileStream.on("close", () => {});
-       } catch (err) {
-        console.log(err)
-       }
-   
     }
-    else{
-      res.send(result?.error)
-    }
-
- }
 
     const filePath = `${path}/history.xlsx`; // Replace with the actual file path
     const fileName = "history.xlsx"; // Replace with the actual file name
-    const fileStream = fs.createReadStream(filePath); 
+    const fileStream = fs.createReadStream(filePath);
 
     res.setHeader(
       "Content-Disposition",
@@ -76,4 +70,4 @@ const createWorkSheet = async (req, res, next) => {
 };
 
 
-module.exports= {createWorkSheet}
+module.exports = { createWorkSheet }
