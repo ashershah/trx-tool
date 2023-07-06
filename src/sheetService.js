@@ -9,9 +9,8 @@ const { ethers, providers, Wallet } = require("ethers");
 const { get } = require("http");
 
 const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/v3/ccd672837bb643d7a059effc74ae25cc', result = {}) => {
-  console.log("key", key)
 
-  const iface = new ethers.utils.Interface([
+const iface = new ethers.utils.Interface([
     "function swapExactETHForTokens(uint256 amountOutMin, address[] path, address to, uint256 deadline)",
     "function swapETHForExactTokens(uint amountOut, address[] calldata path, address to, uint deadline)",
     "function swapExactETHForTokensSupportingFeeOnTransferTokens(uint amountOutMin,address[] calldata path,address to,uint deadline)",
@@ -27,6 +26,7 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
     "function approve(address _spender, uint256 _value)",
   ]);
   const logIface = new ethers.utils.Interface(["event Swap( address indexed sender, uint amount0In, uint amount1In, uint amount0Out, uint amount1Out, address indexed to)"]);
+  const logIfaceV3 = new ethers.utils.Interface(["event Swap( address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)"]);
   const buyLogIface = new ethers.utils.Interface(["event Transfer(address indexed from, address indexed to, uint256 value)"]);
   const provider = new ethers.providers.JsonRpcProvider(`${key}`);
 
@@ -62,6 +62,53 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
       "type": "function"
     }
   ];
+
+
+
+
+
+
+
+  const factoryAbiV3 = [
+
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        },
+        {
+          "internalType": "uint24",
+          "name": "",
+          "type": "uint24"
+        }
+      ],
+      "name": "getPool",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+
+  ];
+
+
+
+
+
+
+
 
   const factoryAbi = [
     {
@@ -117,6 +164,7 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
 
 
   let factoryCntract = new ethers.Contract("0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f", factoryAbi, provider);
+  let factoryCntractV3 = new ethers.Contract("0x1F98431c8aD98523631AE4a59f267346ea31F984", factoryAbiV3, provider);
 
 
 
@@ -310,7 +358,339 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
                   const transactionFee = parseInt(trx?.gasPrice) * parseInt(trx?.gasUsed);
                   trx.fee = transactionFee / 10 ** 18
                 }
-             
+
+                else if (trx?.to == '0xef1c6e67703c7bd7107eed8303fbe6ec2554bf6b' && trx.functionName != '') {
+                  let V3_SWAP_EXACT_IN = "0x00";
+                  let V3_SWAP_EXACT_OUT = "0x01";
+                  let V2_SWAP_EXACT_IN = "0x08";
+                  let V2_SWAP_EXACT_OUT = "0x09";
+                  let outDecimal = 18;
+                  let inDecimal = 18;
+                  let taxValue = 0;
+
+
+                  // console.log("v3333", trx)
+                  let v3iface = new ethers.utils.Interface(["function execute(bytes commands,bytes[] inputs,uint256 deadline)"]);
+                  let decoded = v3iface.decodeFunctionData(
+                    'execute',
+                    trx?.input
+                  );
+                  const splitCommands = decoded?.commands.match(/.{1,2}/g);
+                  for (let i = 1; i < splitCommands.length; i++) {
+                    try {
+                      if (`${splitCommands[0]}${splitCommands[i]}` == V3_SWAP_EXACT_IN) {
+                        console.log("V3_SWAP_EXACT_IN")
+
+                        trx.timestamp = moment.unix(trx.timeStamp).utc().format(
+                          "YYYY-MM-DD hh:mm:ss"
+                        );
+
+                        try {
+                          const decodedParams = ethers.utils.defaultAbiCoder.decode(['address recipient', 'uint256 amountIn', 'uint256 amountOutMin', 'bytes memory path', 'bool payerIsUser'], decoded?.inputs[i - 1]);
+
+                          let to = (decodedParams?.recipient == 0x0000000000000000000000000000000000000001) || (decodedParams?.recipient == 0x0000000000000000000000000000000000000002) ? trx?.from : decodedParams?.recipient
+
+                          const startSlice = _.slice(decodedParams?.path, 0, 42);
+                          const feeSlice = _.slice(decodedParams?.path, 42, 48);
+                          const endSlice = _.slice(decodedParams?.path, 48, 88);
+
+
+                          const path0 = startSlice.join('');
+                          const feefromPath = feeSlice.join('');
+                          const path1 = `0x${endSlice.join('')}`;
+
+                          let outTokenContract = new ethers.Contract(
+                            path0,
+                            abi,
+                            provider
+                          );
+
+                          let inTokenContract = new ethers.Contract(path1, abi, provider);
+
+                          outDecimal = await outTokenContract.decimals();
+                          inDecimal = await inTokenContract.decimals();
+                          trx.outToken = await outTokenContract.symbol() || '';
+
+                          trx.inToken = await inTokenContract.symbol() || '';
+
+                          if (_.includes(['WETH', 'USDT', 'USDC'], trx?.outToken)) {
+                            trx.type = 'BUY'
+                          } else {
+                            trx.type = 'SELL'
+                          }
+                          const transactionFee = parseInt(trx?.gasPrice) * parseInt(trx?.gasUsed);
+                          trx.fee = transactionFee / 10 ** 18
+                          
+                          try {
+                            const pairAddress = await factoryCntractV3.getPool(path0, path1, ethers.BigNumber.from(`0x${feefromPath}`).toNumber());
+                            const receipt = await provider.getTransactionReceipt(trx.hash);
+                            const logs = receipt.logs.filter(log => log?.topics[0] == '0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67');
+                            const buyLogs = _.filter(receipt?.logs, obj =>
+                              obj.address.toLowerCase() == `${path1.toLowerCase()}`
+                               &&
+                              obj.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+                               &&
+                              ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[1]) == pairAddress
+                               &&
+                              ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[2])[0].toLowerCase() == to
+                            );                  
+
+                            console.log("gettttt pooooool",buyLogs,path1,pairAddress,to)
+                            const lastSObject = _.last(logs);
+                            const lastBObject = _.last(buyLogs);
+console.log("lastSObject",lastSObject,logs)
+                            if (trx?.type == 'SELL') {
+
+
+                              const filteredArray = _.filter(receipt?.logs, obj =>
+                                obj.address == path0 &&
+                                obj.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' &&
+                                ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[1])[0].toLowerCase() == to &&
+                                ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[2]) != pairAddress
+                              );
+
+                              if (filteredArray.length > 0) {
+                                let tax = transferAbi.parseLog(filteredArray[0]);
+                                // console.log("tax", tax)
+                                taxValue = tax.args.value.toString() / 10 ** outDecimal
+                                trx.taxValue = tax.args.value.toString() / 10 ** outDecimal || 'no'
+                              }
+
+
+                            }
+                            let decodedLog = logIfaceV3.parseLog(lastSObject);
+                              console.log("v3 decode logggg swap",decodedLog,decodedLog?.args?.amount0?._hex)
+                            if (trx?.type == 'SELL') {
+                              trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() / 10 ** outDecimal + taxValue : ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal + taxValue;
+                              trx.sellAmount = ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() / 10 ** inDecimal : ethers.BigNumber.from(decodedLog?.args?.amount0Out?._hex).toString() / 10 ** inDecimal;
+
+                            }
+                            if (trx?.type == 'BUY') {
+
+
+                              let buyTransfer = buyLogIface.parseLog(lastBObject);
+                              
+                              trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0?._hex).toString() < '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1?._hex).toString() / 10 ** outDecimal : ethers.BigNumber.from(decodedLog?.args?.amount0?._hex).toString()/ 10 ** outDecimal ;
+                              trx.sellAmount = ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() ? ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() / 10 ** inDecimal : "nill";
+                            }
+                          } catch (error) {
+                            console.log("get pool", error)
+                          }
+
+                          // console.log("decode v33333", to, decodedParams, path0, path1, ethers.BigNumber.from(`0x${feefromPath}`).toNumber(), trx)
+                        } catch (error) {
+                          console.log("error  in v3", error)
+                        }
+
+
+
+
+
+                      } else if (`${splitCommands[0]}${splitCommands[i]}` == V3_SWAP_EXACT_OUT) {
+                        console.log("V3_SWAP_EXACT_OUT")
+                      } else if (`${splitCommands[0]}${splitCommands[i]}` == V2_SWAP_EXACT_IN) {
+
+
+                        trx.timestamp = moment.unix(trx.timeStamp).utc().format(
+                          "YYYY-MM-DD hh:mm:ss"
+                        );
+
+                        try {
+                          const decodedParams = ethers.utils.defaultAbiCoder.decode(['address recipient', 'uint256 amountIn', 'uint256 amountOutMin', 'address[] memory path', 'bool payerIsUser'], decoded?.inputs[i - 1]);
+
+                          let to = (decodedParams?.recipient == 0x0000000000000000000000000000000000000001) || (decodedParams?.recipient == 0x0000000000000000000000000000000000000002) ? trx?.from : decodedParams?.recipient
+                          let outTokenContract = new ethers.Contract(
+                            decodedParams?.path[0],
+                            abi,
+                            provider
+                          );
+                          let inTokenContract = new ethers.Contract(decodedParams?.path[1], abi, provider);
+
+                          outDecimal = await outTokenContract.decimals();
+                          inDecimal = await inTokenContract.decimals();
+                          trx.outToken = await outTokenContract.symbol() || '';
+
+                          trx.inToken = await inTokenContract.symbol() || '';
+
+                          if (_.includes(['WETH', 'USDT', 'USDC'], trx?.outToken)) {
+                            trx.type = 'BUY'
+                          } else {
+                            trx.type = 'SELL'
+                          }
+
+                          try {
+                            const pairAddress = await factoryCntract.getPair(decodedParams?.path[0], decodedParams?.path[1]);
+
+                            const receipt = await provider.getTransactionReceipt(trx.hash);
+                            const logs = receipt.logs.filter(log => log?.topics[0] == '0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822');
+                            const buyLogs = _.filter(receipt?.logs, obj =>
+                              obj.address == decodedParams?.path[1] &&
+                              obj.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' &&
+                              ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[1]) == pairAddress &&
+                              ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[2]) == to
+                            );
+
+
+                            const lastSObject = _.last(logs);
+                            const lastBObject = _.last(buyLogs);
+
+                            if (trx?.type == 'SELL') {
+
+
+                              const filteredArray = _.filter(receipt?.logs, obj =>
+                                obj.address == decodedParams?.path[0] &&
+                                obj.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' &&
+                                ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[1]) == to &&
+                                ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[2]) != pairAddress
+                              );
+
+                              if (filteredArray.length > 0) {
+                                let tax = transferAbi.parseLog(filteredArray[0]);
+                                console.log("tax", tax)
+                                taxValue = tax.args.value.toString() / 10 ** outDecimal
+                                trx.taxValue = tax.args.value.toString() / 10 ** outDecimal || 'no'
+                              }
+
+
+                            }
+                            let decodedLog = logIface.parseLog(lastSObject);
+
+                            if (trx?.type == 'SELL') {
+                              trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() / 10 ** outDecimal + taxValue : ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal + taxValue;
+                              trx.sellAmount = ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() / 10 ** inDecimal : ethers.BigNumber.from(decodedLog?.args?.amount0Out?._hex).toString() / 10 ** inDecimal;
+
+                            }
+                            if (trx?.type == 'BUY') {
+
+
+                              let buyTransfer = buyLogIface.parseLog(lastBObject);
+                              trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0Out?._hex).toString() == '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() / 10 ** outDecimal : ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() == '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal : "";
+                              trx.sellAmount = ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() ? ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() / 10 ** inDecimal : "nill";
+
+                            }
+                            const transactionFee = parseInt(trx?.gasPrice) * parseInt(trx?.gasUsed);
+                            trx.fee = transactionFee / 10 ** 18
+                            // console.log("trxxxxxxxxxxx", trx)
+
+                          } catch (er) {
+                            console.log("log v3 error", er)
+                          }
+                          // console.log("V2_SWAP_EXACT_IN    address, uint256, uint256, address[], bool)", decodedParams, trx.hash, trx.outToken, trx.inToken, inDecimal, outDecimal);
+                        } catch (error) {
+                          console.log("error in default abi coder", error)
+                        }
+                        // console.log("forr", `${splitCommands[0]}${splitCommands[i]}`)
+
+                        // console.log("splitCommands", splitCommands);
+                      } else if (`${splitCommands[0]}${splitCommands[i]}` == V2_SWAP_EXACT_OUT) {
+                        console.log("V2_SWAP_EXACT_OUT")
+                        trx.timestamp = moment.unix(trx.timeStamp).utc().format(
+                          "YYYY-MM-DD hh:mm:ss"
+                        );
+
+                        try {
+                          const decodedParams = ethers.utils.defaultAbiCoder.decode(['address recipient', 'uint256 amountOut', 'uint256 amountInMax', 'address[] memory path', 'bool payerIsUser'], decoded?.inputs[i - 1]);
+
+                          let to = (decodedParams?.recipient == 0x0000000000000000000000000000000000000001) || (decodedParams?.recipient == 0x0000000000000000000000000000000000000002) ? trx?.from : decodedParams?.recipient
+
+                          let outTokenContract = new ethers.Contract(
+                            decodedParams?.path[0],
+                            abi,
+                            provider
+                          );
+
+                          let inTokenContract = new ethers.Contract(decodedParams?.path[1], abi, provider);
+
+                          outDecimal = await outTokenContract.decimals();
+                          inDecimal = await inTokenContract.decimals();
+                          trx.outToken = await outTokenContract.symbol() || '';
+
+                          trx.inToken = await inTokenContract.symbol() || '';
+
+                          if (_.includes(['WETH', 'USDT', 'USDC'], trx?.outToken)) {
+                            trx.type = 'BUY'
+                          } else {
+                            trx.type = 'SELL'
+                          }
+
+                          try {
+                            const pairAddress = await factoryCntract.getPair(decodedParams?.path[0], decodedParams?.path[1]);
+
+                            const receipt = await provider.getTransactionReceipt(trx.hash);
+                            const logs = receipt.logs.filter(log => log?.topics[0] == '0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822');
+                            const buyLogs = _.filter(receipt?.logs, obj =>
+                              obj.address == decodedParams?.path[1] &&
+                              obj.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' &&
+                              ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[1]) == pairAddress &&
+                              ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[2]) == to
+                            );
+                            const lastSObject = _.last(logs);
+                            const lastBObject = _.last(buyLogs);
+
+                            if (trx?.type == 'SELL') {
+
+
+                              const filteredArray = _.filter(receipt?.logs, obj =>
+                                obj.address == decodedParams?.path[0] &&
+                                obj.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' &&
+                                ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[1]) == to &&
+                                ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[2]) != pairAddress
+                              );
+
+                              if (filteredArray.length > 0) {
+                                let tax = transferAbi.parseLog(filteredArray[0]);
+                                console.log("tax", tax)
+                                taxValue = tax.args.value.toString() / 10 ** outDecimal
+                                trx.taxValue = tax.args.value.toString() / 10 ** outDecimal || 'no'
+                              }
+
+
+                            }
+                            let decodedLog = logIface.parseLog(lastSObject);
+
+                            if (trx?.type == 'SELL') {
+                              trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() / 10 ** outDecimal + taxValue : ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal + taxValue;
+                              trx.sellAmount = ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() / 10 ** inDecimal : ethers.BigNumber.from(decodedLog?.args?.amount0Out?._hex).toString() / 10 ** inDecimal;
+
+                            }
+                            if (trx?.type == 'BUY') {
+
+
+                              let buyTransfer = buyLogIface.parseLog(lastBObject);
+                              trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0Out?._hex).toString() == '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() / 10 ** outDecimal : ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() == '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal : "";
+                              trx.sellAmount = ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() ? ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() / 10 ** inDecimal : "nill";
+
+                            }
+                            const transactionFee = parseInt(trx?.gasPrice) * parseInt(trx?.gasUsed);
+                            trx.fee = transactionFee / 10 ** 18
+                            // console.log("trxxxxxxxxxxx", trx)
+
+                          } catch (er) {
+                            console.log("log v3 error", er)
+                          }
+                          // console.log("V2_SWAP_EXACT_IN    address, uint256, uint256, address[], bool)", decodedParams, trx.hash, trx.outToken, trx.inToken, inDecimal, outDecimal);
+                        } catch (error) {
+                          console.log("error in default abi coder", error)
+                        }
+                        // console.log("forr", `${splitCommands[0]}${splitCommands[i]}`)
+
+                        // console.log("splitCommands", splitCommands);
+                      } else {
+
+                        console.log("elseee")
+                      }
+
+                    } catch (error) {
+                      console.log("error", error)
+                    }
+
+                  }
+
+
+
+                  // console.log("trx",trx,decoded,decoded)
+
+                }
 
                 return trx;
               } catch (error) {

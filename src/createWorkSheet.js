@@ -12,8 +12,6 @@ const createWorkSheet = async (req, res, next) => {
   const workbook = new excelJS.Workbook(); // Create a new workbook
   const path = "./files"; // Path to download excel
   const finalSheet = workbook.addWorksheet('final-result');
-  console.log("aa", key)
-
   try {
 
     for (let add of address) {
