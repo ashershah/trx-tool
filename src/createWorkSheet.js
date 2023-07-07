@@ -17,14 +17,14 @@ const createWorkSheet = async (req, res, next) => {
     for (let add of address) {
       const result = await sheetService(add, from, to, key);
       if (result?.data) {
-        const walletTrxSheet = workbook.addWorksheet(`wallet-${add}`);
-        const walletProfitSheet = workbook.addWorksheet(`wallet-Token-${add}`);
+        const walletTrxSheet = workbook.addWorksheet(`TXs-${add.slice(-6)}`);
+        const walletProfitSheet = workbook.addWorksheet(`Tok-${add.slice(-6)}`);
 
         const res = await writeSheet(walletTrxSheet, walletProfitSheet, finalSheet, add, result.data);
 
         try {
 
-          await workbook.xlsx.writeFile(`${path}/history.xlsx`);
+          await workbook.xlsx.writeFile(`${path}/${from}-${to}.xlsx`);
           console.log("succesful");
         } catch (err) {
           console.log(err)
@@ -37,8 +37,8 @@ const createWorkSheet = async (req, res, next) => {
 
     }
 
-    const filePath = `${path}/history.xlsx`; // Replace with the actual file path
-    const fileName = "history.xlsx"; // Replace with the actual file name
+    const filePath = `${path}/${from}-${to}.xlsx`; // Replace with the actual file path
+    const fileName = `${from}-${to}.xlsx`; // Replace with the actual file name
     const fileStream = fs.createReadStream(filePath);
 
     res.setHeader(
@@ -50,18 +50,6 @@ const createWorkSheet = async (req, res, next) => {
       res.status(200).send();
     });
     if (result.error) throw result.ex;
-
-    // if (result.hasConflict)
-    //   throw createError(StatusCodes.CONFLICT, result.conflictMessage);
-
-    // if (!result.data)
-    //   throw createError(StatusCodes.NOT_FOUND, "Product not found");
-
-    // return res.status(StatusCodes.OK).json({
-    //   statusCode: StatusCodes.OK,
-    //   message: "Product updated successfully",
-    //   data: result.data
-    // });
   } catch (ex) {
     next(ex);
   }

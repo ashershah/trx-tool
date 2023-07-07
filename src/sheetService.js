@@ -1,16 +1,23 @@
 const moment = require("moment");
 const axios = require("axios");
-const API_KEY = "BQYwKrt1vg9lUe2b5Dz1tSz2rkBjQsll";
-const API_URL = `https://graphql.bitquery.io/`;
-var fs = require("fs");
-const excelJS = require("exceljs");
 const _ = require("lodash");
 const { ethers, providers, Wallet } = require("ethers");
 const { get } = require("http");
 
+
+
+
+// keys
+
+// Etherscan api
+const apiKey = "M9TKZC1D3W8WPPPYD1TP41DTKITVNPMNTG";
+
+
+
+
 const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/v3/ccd672837bb643d7a059effc74ae25cc', result = {}) => {
 
-const iface = new ethers.utils.Interface([
+  const iface = new ethers.utils.Interface([
     "function swapExactETHForTokens(uint256 amountOutMin, address[] path, address to, uint256 deadline)",
     "function swapETHForExactTokens(uint amountOut, address[] calldata path, address to, uint deadline)",
     "function swapExactETHForTokensSupportingFeeOnTransferTokens(uint amountOutMin,address[] calldata path,address to,uint deadline)",
@@ -31,7 +38,7 @@ const iface = new ethers.utils.Interface([
   const provider = new ethers.providers.JsonRpcProvider(`${key}`);
 
 
-  const apiKey = "M9TKZC1D3W8WPPPYD1TP41DTKITVNPMNTG";
+
   const abi = [
     {
       "constant": true,
@@ -41,6 +48,8 @@ const iface = new ethers.utils.Interface([
         {
           "name": "",
           "type": "string"
+
+
         }
       ],
       "payable": false,
@@ -62,12 +71,6 @@ const iface = new ethers.utils.Interface([
       "type": "function"
     }
   ];
-
-
-
-
-
-
 
   const factoryAbiV3 = [
 
@@ -102,13 +105,6 @@ const iface = new ethers.utils.Interface([
     }
 
   ];
-
-
-
-
-
-
-
 
   const factoryAbi = [
     {
@@ -161,14 +157,8 @@ const iface = new ethers.utils.Interface([
     }
   ]);
 
-
-
   let factoryCntract = new ethers.Contract("0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f", factoryAbi, provider);
   let factoryCntractV3 = new ethers.Contract("0x1F98431c8aD98523631AE4a59f267346ea31F984", factoryAbiV3, provider);
-
-
-
-
 
   try {
     try {
@@ -253,7 +243,8 @@ const iface = new ethers.utils.Interface([
                 }
 
                 //if dex buy sell V2  trx
-                else if (trx?.to != '0xef1c6e67703c7bd7107eed8303fbe6ec2554bf6b' && trx.functionName != '') {
+                else if ((trx?.to != '0xef1c6e67703c7bd7107eed8303fbe6ec2554bf6b' &&  trx?.to != '0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad') && trx.functionName != '') {
+                                  
                   let decoded = iface.decodeFunctionData(
                     trx.functionName.substring(0, trx.functionName.indexOf("(")),
                     trx?.input
@@ -359,7 +350,8 @@ const iface = new ethers.utils.Interface([
                   trx.fee = transactionFee / 10 ** 18
                 }
 
-                else if (trx?.to == '0xef1c6e67703c7bd7107eed8303fbe6ec2554bf6b' && trx.functionName != '') {
+                //if dex buy sell V3 universal router  trx
+                else if ((trx?.to == '0xef1c6e67703c7bd7107eed8303fbe6ec2554bf6b'  || trx?.to == '0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad') && trx.functionName != '') {
                   let V3_SWAP_EXACT_IN = "0x00";
                   let V3_SWAP_EXACT_OUT = "0x01";
                   let V2_SWAP_EXACT_IN = "0x08";
@@ -369,7 +361,7 @@ const iface = new ethers.utils.Interface([
                   let taxValue = 0;
 
 
-                  // console.log("v3333", trx)
+                  console.log("v3333")
                   let v3iface = new ethers.utils.Interface(["function execute(bytes commands,bytes[] inputs,uint256 deadline)"]);
                   let decoded = v3iface.decodeFunctionData(
                     'execute',
@@ -378,16 +370,23 @@ const iface = new ethers.utils.Interface([
                   const splitCommands = decoded?.commands.match(/.{1,2}/g);
                   for (let i = 1; i < splitCommands.length; i++) {
                     try {
-                      if (`${splitCommands[0]}${splitCommands[i]}` == V3_SWAP_EXACT_IN) {
-                        console.log("V3_SWAP_EXACT_IN")
+                      if (`${splitCommands[0]}${splitCommands[i]}` == V3_SWAP_EXACT_IN || `${splitCommands[0]}${splitCommands[i]}` == V3_SWAP_EXACT_OUT) {
 
                         trx.timestamp = moment.unix(trx.timeStamp).utc().format(
                           "YYYY-MM-DD hh:mm:ss"
                         );
-
+                        let decodedParams = {};
                         try {
-                          const decodedParams = ethers.utils.defaultAbiCoder.decode(['address recipient', 'uint256 amountIn', 'uint256 amountOutMin', 'bytes memory path', 'bool payerIsUser'], decoded?.inputs[i - 1]);
+                          //check V3 In/Out
+                          if (`${splitCommands[0]}${splitCommands[i]}` == V3_SWAP_EXACT_IN) {
+                            console.log("V3_SWAP_EXACT_IN", trx.hash)
 
+                            decodedParams = ethers.utils.defaultAbiCoder.decode(['address recipient', 'uint256 amountIn', 'uint256 amountOutMin', 'bytes memory path', 'bool payerIsUser'], decoded?.inputs[i - 1]);
+                          } else {
+                            console.log("V3_SWAP_EXACT_OUT", trx.hash)
+
+                            decodedParams = ethers.utils.defaultAbiCoder.decode(['address recipient', 'uint256 amountOut', 'uint256 amountInMax', 'bytes memory path', 'bool payerIsUser'], decoded?.inputs[i - 1]);
+                          }
                           let to = (decodedParams?.recipient == 0x0000000000000000000000000000000000000001) || (decodedParams?.recipient == 0x0000000000000000000000000000000000000002) ? trx?.from : decodedParams?.recipient
 
                           const startSlice = _.slice(decodedParams?.path, 0, 42);
@@ -420,25 +419,23 @@ const iface = new ethers.utils.Interface([
                           }
                           const transactionFee = parseInt(trx?.gasPrice) * parseInt(trx?.gasUsed);
                           trx.fee = transactionFee / 10 ** 18
-                          
+
                           try {
                             const pairAddress = await factoryCntractV3.getPool(path0, path1, ethers.BigNumber.from(`0x${feefromPath}`).toNumber());
                             const receipt = await provider.getTransactionReceipt(trx.hash);
                             const logs = receipt.logs.filter(log => log?.topics[0] == '0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67');
                             const buyLogs = _.filter(receipt?.logs, obj =>
                               obj.address.toLowerCase() == `${path1.toLowerCase()}`
-                               &&
+                              &&
                               obj.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
-                               &&
-                              ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[1]) == pairAddress
-                               &&
-                              ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[2])[0].toLowerCase() == to
-                            );                  
+                              &&
+                              ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[1])[0].toLowerCase() == pairAddress.toLowerCase()
+                              &&
+                              ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[2])[0].toLowerCase() == to.toLowerCase()
+                            );
 
-                            console.log("gettttt pooooool",buyLogs,path1,pairAddress,to)
                             const lastSObject = _.last(logs);
                             const lastBObject = _.last(buyLogs);
-console.log("lastSObject",lastSObject,logs)
                             if (trx?.type == 'SELL') {
 
 
@@ -451,7 +448,6 @@ console.log("lastSObject",lastSObject,logs)
 
                               if (filteredArray.length > 0) {
                                 let tax = transferAbi.parseLog(filteredArray[0]);
-                                // console.log("tax", tax)
                                 taxValue = tax.args.value.toString() / 10 ** outDecimal
                                 trx.taxValue = tax.args.value.toString() / 10 ** outDecimal || 'no'
                               }
@@ -459,237 +455,135 @@ console.log("lastSObject",lastSObject,logs)
 
                             }
                             let decodedLog = logIfaceV3.parseLog(lastSObject);
-                              console.log("v3 decode logggg swap",decodedLog,decodedLog?.args?.amount0?._hex)
                             if (trx?.type == 'SELL') {
-                              trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() / 10 ** outDecimal + taxValue : ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal + taxValue;
-                              trx.sellAmount = ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() / 10 ** inDecimal : ethers.BigNumber.from(decodedLog?.args?.amount0Out?._hex).toString() / 10 ** inDecimal;
+                              // + out - in
+                              trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0?._hex).toString() > '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0?._hex).toString() / 10 ** outDecimal + taxValue : ethers.BigNumber.from(decodedLog?.args?.amount1?._hex).toString() / 10 ** outDecimal + taxValue || 0;
+                              trx.sellAmount = ethers.BigNumber.from(decodedLog?.args?.amount0?._hex).toString() > '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1?._hex).abs().toString() / 10 ** inDecimal : ethers.BigNumber.from(decodedLog?.args?.amount0?._hex).abs().toString() / 10 ** inDecimal || 0;
 
                             }
                             if (trx?.type == 'BUY') {
-
-
                               let buyTransfer = buyLogIface.parseLog(lastBObject);
-                              
-                              trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0?._hex).toString() < '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1?._hex).toString() / 10 ** outDecimal : ethers.BigNumber.from(decodedLog?.args?.amount0?._hex).toString()/ 10 ** outDecimal ;
-                              trx.sellAmount = ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() ? ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() / 10 ** inDecimal : "nill";
+
+                              trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0?._hex).toString() < '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1?._hex).toString() / 10 ** outDecimal : ethers.BigNumber.from(decodedLog?.args?.amount0?._hex).toString() / 10 ** outDecimal || 0;
+                              trx.sellAmount = ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() ? ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() / 10 ** inDecimal : "nill" || 0;
                             }
                           } catch (error) {
-                            console.log("get pool", error)
+                            console.log("Error V3_SWAP_EXACT_IN logs/pool", error)
                           }
 
-                          // console.log("decode v33333", to, decodedParams, path0, path1, ethers.BigNumber.from(`0x${feefromPath}`).toNumber(), trx)
                         } catch (error) {
-                          console.log("error  in v3", error)
+                          console.log("Error V3_SWAP_EXACT_IN", error)
                         }
 
 
 
 
 
-                      } else if (`${splitCommands[0]}${splitCommands[i]}` == V3_SWAP_EXACT_OUT) {
-                        console.log("V3_SWAP_EXACT_OUT")
-                      } else if (`${splitCommands[0]}${splitCommands[i]}` == V2_SWAP_EXACT_IN) {
-
-
-                        trx.timestamp = moment.unix(trx.timeStamp).utc().format(
-                          "YYYY-MM-DD hh:mm:ss"
-                        );
-
-                        try {
-                          const decodedParams = ethers.utils.defaultAbiCoder.decode(['address recipient', 'uint256 amountIn', 'uint256 amountOutMin', 'address[] memory path', 'bool payerIsUser'], decoded?.inputs[i - 1]);
-
-                          let to = (decodedParams?.recipient == 0x0000000000000000000000000000000000000001) || (decodedParams?.recipient == 0x0000000000000000000000000000000000000002) ? trx?.from : decodedParams?.recipient
-                          let outTokenContract = new ethers.Contract(
-                            decodedParams?.path[0],
-                            abi,
-                            provider
-                          );
-                          let inTokenContract = new ethers.Contract(decodedParams?.path[1], abi, provider);
-
-                          outDecimal = await outTokenContract.decimals();
-                          inDecimal = await inTokenContract.decimals();
-                          trx.outToken = await outTokenContract.symbol() || '';
-
-                          trx.inToken = await inTokenContract.symbol() || '';
-
-                          if (_.includes(['WETH', 'USDT', 'USDC'], trx?.outToken)) {
-                            trx.type = 'BUY'
-                          } else {
-                            trx.type = 'SELL'
-                          }
-
-                          try {
-                            const pairAddress = await factoryCntract.getPair(decodedParams?.path[0], decodedParams?.path[1]);
-
-                            const receipt = await provider.getTransactionReceipt(trx.hash);
-                            const logs = receipt.logs.filter(log => log?.topics[0] == '0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822');
-                            const buyLogs = _.filter(receipt?.logs, obj =>
-                              obj.address == decodedParams?.path[1] &&
-                              obj.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' &&
-                              ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[1]) == pairAddress &&
-                              ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[2]) == to
-                            );
-
-
-                            const lastSObject = _.last(logs);
-                            const lastBObject = _.last(buyLogs);
-
-                            if (trx?.type == 'SELL') {
-
-
-                              const filteredArray = _.filter(receipt?.logs, obj =>
-                                obj.address == decodedParams?.path[0] &&
-                                obj.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' &&
-                                ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[1]) == to &&
-                                ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[2]) != pairAddress
-                              );
-
-                              if (filteredArray.length > 0) {
-                                let tax = transferAbi.parseLog(filteredArray[0]);
-                                console.log("tax", tax)
-                                taxValue = tax.args.value.toString() / 10 ** outDecimal
-                                trx.taxValue = tax.args.value.toString() / 10 ** outDecimal || 'no'
-                              }
-
-
-                            }
-                            let decodedLog = logIface.parseLog(lastSObject);
-
-                            if (trx?.type == 'SELL') {
-                              trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() / 10 ** outDecimal + taxValue : ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal + taxValue;
-                              trx.sellAmount = ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() / 10 ** inDecimal : ethers.BigNumber.from(decodedLog?.args?.amount0Out?._hex).toString() / 10 ** inDecimal;
-
-                            }
-                            if (trx?.type == 'BUY') {
-
-
-                              let buyTransfer = buyLogIface.parseLog(lastBObject);
-                              trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0Out?._hex).toString() == '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() / 10 ** outDecimal : ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() == '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal : "";
-                              trx.sellAmount = ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() ? ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() / 10 ** inDecimal : "nill";
-
-                            }
-                            const transactionFee = parseInt(trx?.gasPrice) * parseInt(trx?.gasUsed);
-                            trx.fee = transactionFee / 10 ** 18
-                            // console.log("trxxxxxxxxxxx", trx)
-
-                          } catch (er) {
-                            console.log("log v3 error", er)
-                          }
-                          // console.log("V2_SWAP_EXACT_IN    address, uint256, uint256, address[], bool)", decodedParams, trx.hash, trx.outToken, trx.inToken, inDecimal, outDecimal);
-                        } catch (error) {
-                          console.log("error in default abi coder", error)
-                        }
-                        // console.log("forr", `${splitCommands[0]}${splitCommands[i]}`)
-
-                        // console.log("splitCommands", splitCommands);
-                      } else if (`${splitCommands[0]}${splitCommands[i]}` == V2_SWAP_EXACT_OUT) {
-                        console.log("V2_SWAP_EXACT_OUT")
-                        trx.timestamp = moment.unix(trx.timeStamp).utc().format(
-                          "YYYY-MM-DD hh:mm:ss"
-                        );
-
-                        try {
-                          const decodedParams = ethers.utils.defaultAbiCoder.decode(['address recipient', 'uint256 amountOut', 'uint256 amountInMax', 'address[] memory path', 'bool payerIsUser'], decoded?.inputs[i - 1]);
-
-                          let to = (decodedParams?.recipient == 0x0000000000000000000000000000000000000001) || (decodedParams?.recipient == 0x0000000000000000000000000000000000000002) ? trx?.from : decodedParams?.recipient
-
-                          let outTokenContract = new ethers.Contract(
-                            decodedParams?.path[0],
-                            abi,
-                            provider
-                          );
-
-                          let inTokenContract = new ethers.Contract(decodedParams?.path[1], abi, provider);
-
-                          outDecimal = await outTokenContract.decimals();
-                          inDecimal = await inTokenContract.decimals();
-                          trx.outToken = await outTokenContract.symbol() || '';
-
-                          trx.inToken = await inTokenContract.symbol() || '';
-
-                          if (_.includes(['WETH', 'USDT', 'USDC'], trx?.outToken)) {
-                            trx.type = 'BUY'
-                          } else {
-                            trx.type = 'SELL'
-                          }
-
-                          try {
-                            const pairAddress = await factoryCntract.getPair(decodedParams?.path[0], decodedParams?.path[1]);
-
-                            const receipt = await provider.getTransactionReceipt(trx.hash);
-                            const logs = receipt.logs.filter(log => log?.topics[0] == '0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822');
-                            const buyLogs = _.filter(receipt?.logs, obj =>
-                              obj.address == decodedParams?.path[1] &&
-                              obj.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' &&
-                              ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[1]) == pairAddress &&
-                              ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[2]) == to
-                            );
-                            const lastSObject = _.last(logs);
-                            const lastBObject = _.last(buyLogs);
-
-                            if (trx?.type == 'SELL') {
-
-
-                              const filteredArray = _.filter(receipt?.logs, obj =>
-                                obj.address == decodedParams?.path[0] &&
-                                obj.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' &&
-                                ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[1]) == to &&
-                                ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[2]) != pairAddress
-                              );
-
-                              if (filteredArray.length > 0) {
-                                let tax = transferAbi.parseLog(filteredArray[0]);
-                                console.log("tax", tax)
-                                taxValue = tax.args.value.toString() / 10 ** outDecimal
-                                trx.taxValue = tax.args.value.toString() / 10 ** outDecimal || 'no'
-                              }
-
-
-                            }
-                            let decodedLog = logIface.parseLog(lastSObject);
-
-                            if (trx?.type == 'SELL') {
-                              trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() / 10 ** outDecimal + taxValue : ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal + taxValue;
-                              trx.sellAmount = ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() / 10 ** inDecimal : ethers.BigNumber.from(decodedLog?.args?.amount0Out?._hex).toString() / 10 ** inDecimal;
-
-                            }
-                            if (trx?.type == 'BUY') {
-
-
-                              let buyTransfer = buyLogIface.parseLog(lastBObject);
-                              trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0Out?._hex).toString() == '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() / 10 ** outDecimal : ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() == '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal : "";
-                              trx.sellAmount = ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() ? ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() / 10 ** inDecimal : "nill";
-
-                            }
-                            const transactionFee = parseInt(trx?.gasPrice) * parseInt(trx?.gasUsed);
-                            trx.fee = transactionFee / 10 ** 18
-                            // console.log("trxxxxxxxxxxx", trx)
-
-                          } catch (er) {
-                            console.log("log v3 error", er)
-                          }
-                          // console.log("V2_SWAP_EXACT_IN    address, uint256, uint256, address[], bool)", decodedParams, trx.hash, trx.outToken, trx.inToken, inDecimal, outDecimal);
-                        } catch (error) {
-                          console.log("error in default abi coder", error)
-                        }
-                        // console.log("forr", `${splitCommands[0]}${splitCommands[i]}`)
-
-                        // console.log("splitCommands", splitCommands);
-                      } else {
-
-                        console.log("elseee")
                       }
+                      else if (`${splitCommands[0]}${splitCommands[i]}` == V2_SWAP_EXACT_IN || `${splitCommands[0]}${splitCommands[i]}` == V2_SWAP_EXACT_OUT) {
+                        console.log("V2_SWAP_EXACT_IN", trx.hash)
 
+
+                        trx.timestamp = moment.unix(trx.timeStamp).utc().format(
+                          "YYYY-MM-DD hh:mm:ss"
+                        );
+
+                        try {
+                          let decodedParams = {};
+
+                          if (`${splitCommands[0]}${splitCommands[i]}` == V2_SWAP_EXACT_IN) {
+                            console.log("V2_SWAP_EXACT_IN", trx.hash)
+
+                            decodedParams = ethers.utils.defaultAbiCoder.decode(['address recipient', 'uint256 amountIn', 'uint256 amountOutMin', 'address[] memory path', 'bool payerIsUser'], decoded?.inputs[i - 1]);
+
+                          } else {
+                            console.log("V2_SWAP_EXACT_OUT", trx.hash)
+
+                            decodedParams = ethers.utils.defaultAbiCoder.decode(['address recipient', 'uint256 amountOut', 'uint256 amountInMax', 'address[] memory path', 'bool payerIsUser'], decoded?.inputs[i - 1]);
+                          }
+                          let to = (decodedParams?.recipient == 0x0000000000000000000000000000000000000001) || (decodedParams?.recipient == 0x0000000000000000000000000000000000000002) ? trx?.from : decodedParams?.recipient
+                          let outTokenContract = new ethers.Contract(
+                            decodedParams?.path[0],
+                            abi,
+                            provider
+                          );
+                          let inTokenContract = new ethers.Contract(decodedParams?.path[1], abi, provider);
+
+                          outDecimal = await outTokenContract.decimals();
+                          inDecimal = await inTokenContract.decimals();
+                          trx.outToken = await outTokenContract.symbol() || '';
+
+                          trx.inToken = await inTokenContract.symbol() || '';
+
+                          if (_.includes(['WETH', 'USDT', 'USDC'], trx?.outToken)) {
+                            trx.type = 'BUY'
+                          } else {
+                            trx.type = 'SELL'
+                          }
+
+                          try {
+                            const pairAddress = await factoryCntract.getPair(decodedParams?.path[0], decodedParams?.path[1]);
+
+                            const receipt = await provider.getTransactionReceipt(trx.hash);
+                            const logs = receipt.logs.filter(log => log?.topics[0] == '0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822');
+                            const buyLogs = _.filter(receipt?.logs, obj =>
+                              obj.address == decodedParams?.path[1] &&
+                              obj.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' &&
+                              ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[1])[0].toLowerCase() == pairAddress.toLowerCase()
+                              &&
+                              ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[2])[0].toLowerCase() == to.toLowerCase()
+                            );
+
+
+                            const lastSObject = _.last(logs);
+                            const lastBObject = _.last(buyLogs);
+                      
+                            if (trx?.type == 'SELL') {
+                              const filteredArray = _.filter(receipt?.logs, obj =>
+                                obj.address == decodedParams?.path[0] &&
+                                obj.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' &&
+                                ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[1])[0].toLowerCase() == to &&
+                                ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[2]) != pairAddress
+                              );
+
+                              if (filteredArray.length > 0) {
+                                let tax = transferAbi.parseLog(filteredArray[0]);
+                                console.log("tax", tax)
+                                taxValue = tax.args.value.toString() / 10 ** outDecimal
+                                trx.taxValue = tax.args.value.toString() / 10 ** outDecimal || 'no'
+                              }
+
+
+                            }
+                            let decodedLog = logIface.parseLog(lastSObject);
+                            if (trx?.type == 'SELL') {
+                              trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() / 10 ** outDecimal + taxValue : ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal + taxValue;
+                              trx.sellAmount = ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() / 10 ** inDecimal : ethers.BigNumber.from(decodedLog?.args?.amount0Out?._hex).toString() / 10 ** inDecimal;
+
+                            }
+                            if (trx?.type == 'BUY') {
+                              let buyTransfer = buyLogIface.parseLog(lastBObject);
+                              trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0Out?._hex).toString() == '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() / 10 ** outDecimal : ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() == '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal : "";
+                              trx.sellAmount = ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() ? ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() / 10 ** inDecimal : "nill";
+
+                            }
+                            const transactionFee = parseInt(trx?.gasPrice) * parseInt(trx?.gasUsed);
+                            trx.fee = transactionFee / 10 ** 18
+
+                          } catch (error) {
+                            console.log("Error V2_SWAP_EXACT_IN pair address/logs", error)
+                          }
+                        } catch (error) {
+                          console.log("Error V2_SWAP_EXACT_IN", error)
+                        }
+
+                      } else {
+                         console.log("elseee")
+                      }
                     } catch (error) {
-                      console.log("error", error)
+                      throw error
                     }
-
                   }
-
-
-
-                  // console.log("trx",trx,decoded,decoded)
-
                 }
 
                 return trx;
@@ -762,6 +656,13 @@ console.log("lastSObject",lastSObject,logs)
     return result;
   }
 };
+
+
+
+
+
+
+
 
 const writeSheet = async (
   walletTrxSheet,
@@ -889,7 +790,7 @@ const writeSheet = async (
 
     walletTrxSheet.addRows(modifyData); // Add data in walletTrxSheet
     walletProfitSheet.addRows(walletSheet2);
-    let finalDataSheet = { wallets: `Wallet-${add}` };
+    let finalDataSheet = { wallets: `${add}` };
     finalDataSheet.profit = _.sumBy(walletSheet2, "profitEth") - _.sumBy(_.filter(
       modifyData,
       (trx) => trx.type === "Approved"
