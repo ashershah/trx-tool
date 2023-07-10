@@ -481,7 +481,7 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
 
                       }
                       else if (`${splitCommands[0]}${splitCommands[i]}` == V2_SWAP_EXACT_IN || `${splitCommands[0]}${splitCommands[i]}` == V2_SWAP_EXACT_OUT) {
-                        console.log("V2_SWAP_EXACT_IN", trx.hash)
+                        // console.log("V2_SWAP_EXACT_IN", trx.hash)
 
 
                         trx.timestamp = moment.unix(trx.timeStamp).utc().format(
@@ -492,7 +492,7 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
                           let decodedParams = {};
 
                           if (`${splitCommands[0]}${splitCommands[i]}` == V2_SWAP_EXACT_IN) {
-                            console.log("V2_SWAP_EXACT_IN", trx.hash)
+                            // console.log("V2_SWAP_EXACT_IN", trx.hash)
 
                             decodedParams = ethers.utils.defaultAbiCoder.decode(['address recipient', 'uint256 amountIn', 'uint256 amountOutMin', 'address[] memory path', 'bool payerIsUser'], decoded?.inputs[i - 1]);
 
@@ -548,7 +548,6 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
 
                               if (filteredArray.length > 0) {
                                 let tax = transferAbi.parseLog(filteredArray[0]);
-                                console.log("tax", tax)
                                 taxValue = tax.args.value.toString() / 10 ** outDecimal
                                 trx.taxValue = tax.args.value.toString() / 10 ** outDecimal || 'no'
                               }
@@ -668,14 +667,14 @@ const writeSheet = async (
   walletTrxSheet,
   walletProfitSheet,
   finalSheet,
-  
-  mWalletTrxSheet,mWalletProfitSheet,mFinalSheet,
+
+  mWalletTrxSheet, mWalletProfitSheet, mFinalSheet,
   add,
   X = 0,
   data,
   result = {}
 ) => {
-   let modifyResponse=false;
+  let modifyResponse = false;
 
   console.log("writeSheet", X);
   try {
@@ -767,174 +766,176 @@ const writeSheet = async (
       { header: "Failed #", key: "failedCountt", width: 20 },
     ];
     let modifyData = data;
-    let updatedData=[]
+    let updatedData = []
     const replaceWethOut = (users) => {
       return _.map(users, (user) => {
         if (user.buyAmount > X && user.outToken === 'WETH') {
-          return _.assign({}, user, { buyAmount: Number(X)
+          return _.assign({}, user, {
+            buyAmount: Number(X)
           });
         }
         return user;
       });
     }
-   
 
 
-  const csvData=(modifyData,walletTrxSheet,walletProfitSheet,finalSheet)=>{
-  console.log("bjvvgv")
-    const uniqueSell = _.uniqBy(modifyData, "outToken").map(
-      (trx) => trx.outToken
-    );
-    const uniqueBuy = _.uniqBy(modifyData, "inToken").map((trx) => trx.inToken);
 
-    const finalTokens = _.union(uniqueSell, uniqueBuy).filter(
-      (trx) => trx !== undefined
-    );
+    const csvData = (modifyData, walletTrxSheet, walletProfitSheet, finalSheet) => {
+      const uniqueSell = _.uniqBy(modifyData, "outToken").map(
+        (trx) => trx.outToken
+      );
+      const uniqueBuy = _.uniqBy(modifyData, "inToken").map((trx) => trx.inToken);
 
-    let walletSheet2 = finalTokens.map((token) => {
-      const inAmount = _.sumBy(
-        _.filter(modifyData, { inToken: token }),
-        "sellAmount"
+      const finalTokens = _.union(uniqueSell, uniqueBuy).filter(
+        (trx) => trx !== undefined
       );
 
-      const outAmout = _.sumBy(
-        _.filter(modifyData, { outToken: token }),
-        "buyAmount"
+      let walletSheet2 = finalTokens.map((token) => {
+        const inAmount = _.sumBy(
+          _.filter(modifyData, { inToken: token }),
+          "sellAmount"
+        );
+
+        const outAmout = _.sumBy(
+          _.filter(modifyData, { outToken: token }),
+          "buyAmount"
+        );
+        const wethIn = _.sumBy(
+          _.filter(modifyData, { inToken: "WETH", outToken: token }),
+          "sellAmount"
+        );
+        const wethOut =
+          token === "WETH"
+            ? outAmout
+            : _.sumBy(
+              _.filter(modifyData, { outToken: "WETH", inToken: token }),
+              "buyAmount"
+            );
+        const inTokenFee = _.sumBy(
+          _.filter(modifyData, { inToken: token }),
+          "fee"
+        );
+        const outTokenFee = _.sumBy(
+          _.filter(modifyData, { outToken: token }),
+          "fee"
+        );
+        const fees = (inAmount == 0) ? 0 : (inTokenFee + outTokenFee);
+
+        const avgSellPrice =
+          wethIn / uniqueSell.filter((trx) => trx !== undefined).length;
+        const profitEth = (inAmount == 0) ? 0 : (wethIn - wethOut - fees);
+        tokenRemaining = inAmount - outAmout;
+
+        return {
+          token: token,
+          inAmount,
+          outAmout,
+          tokenRemaining,
+          wethIn,
+          wethOut,
+          avgSellPrice,
+          fees,
+          profitEth,
+        };
+      });
+
+      // console.log("1 walletSheet2",walletSheet2  );
+
+      walletSheet2 = _.reject(walletSheet2, (obj) =>
+        _.includes(["WETH", "USDT", "USDC"], obj.token)
       );
-      const wethIn = _.sumBy(
-        _.filter(modifyData, { inToken: "WETH", outToken: token }),
-        "sellAmount"
-      );
-      const wethOut =
-        token === "WETH"
-          ? outAmout
-          : _.sumBy(
-            _.filter(modifyData, { outToken: "WETH", inToken: token }),
-            "buyAmount"
-          );
-      const inTokenFee = _.sumBy(
-        _.filter(modifyData, { inToken: token }),
-        "fee"
-      );
-      const outTokenFee = _.sumBy(
-        _.filter(modifyData, { outToken: token }),
-        "fee"
-      );
-      const fees = (inAmount == 0) ? 0 : (inTokenFee + outTokenFee);
+      // console.log("2 walletSheet2",walletSheet2  );
 
-      const avgSellPrice =
-        wethIn / uniqueSell.filter((trx) => trx !== undefined).length;
-      const profitEth = (inAmount == 0) ? 0 : (wethIn - wethOut - fees);
-      tokenRemaining = inAmount - outAmout;
 
-      return {
-        token: token,
-        inAmount,
-        outAmout,
-        tokenRemaining,
-        wethIn,
-        wethOut,
-        avgSellPrice,
-        fees,
-        profitEth,
-      };
-    });
-
-    // console.log("1 walletSheet2",walletSheet2  );
-
-    walletSheet2 = _.reject(walletSheet2, (obj) =>
-      _.includes(["WETH", "USDT", "USDC"], obj.token)
-    );
-    // console.log("2 walletSheet2",walletSheet2  );
-
-  
-    let finalDataSheet = { wallets: `${add}` };
-    finalDataSheet.profit = _.sumBy(walletSheet2, "profitEth") - _.sumBy(_.filter(
-      modifyData,
-      (trx) => trx.type === "Approved"
-    ), "fee") - _.sumBy(
-      _.filter(
-        modifyData,
-        (trx) => trx.type === "Failed"
-      ),
-      "fee"
-    );
-    finalDataSheet.fee = _.sumBy(walletSheet2, "fees");
-    finalDataSheet.expense = _.sumBy(walletSheet2, "wethOut");
-    finalDataSheet.expenseWithFee = finalDataSheet.expense + finalDataSheet.fee + _.sumBy(_.filter(
-      modifyData,
-      (trx) => trx.type === "Approved"
-    ), "fee") + _.sumBy(
-      _.filter(
-        modifyData,
-        (trx) => trx.type === "Failed"
-      ),
-      "fee"
-    );
-
-    finalDataSheet.buy = _.size(_.filter(modifyData, { type: "BUY" }));
-
-    finalDataSheet.sell = _.size(_.filter(modifyData, { type: "SELL" }));
-    finalDataSheet.trade = finalDataSheet.buy + finalDataSheet.sell;
-    finalDataSheet.openTrade = _.size(
-      _.filter(walletSheet2, (trx) => trx.tokenRemaining > 0)
-    );
-    finalDataSheet.expVsPro =
-      finalDataSheet.profit / finalDataSheet.expenseWithFee;
-
-    finalDataSheet.approved =
-      _.sumBy(_.filter(
+      let finalDataSheet = { wallets: `${add}` };
+      finalDataSheet.profit = _.sumBy(walletSheet2, "profitEth") - _.sumBy(_.filter(
         modifyData,
         (trx) => trx.type === "Approved"
-      ), "fee");
-
-    finalDataSheet.failed =
-      _.sumBy(
+      ), "fee") - _.sumBy(
         _.filter(
           modifyData,
           (trx) => trx.type === "Failed"
         ),
         "fee"
       );
-    finalDataSheet.failedCountt = _.countBy(modifyData, 'type')['Failed'] || 0;
+      finalDataSheet.fee = _.sumBy(walletSheet2, "fees");
+      finalDataSheet.expense = _.sumBy(walletSheet2, "wethOut");
+      finalDataSheet.expenseWithFee = finalDataSheet.expense + finalDataSheet.fee + _.sumBy(_.filter(
+        modifyData,
+        (trx) => trx.type === "Approved"
+      ), "fee") + _.sumBy(
+        _.filter(
+          modifyData,
+          (trx) => trx.type === "Failed"
+        ),
+        "fee"
+      );
+
+      finalDataSheet.buy = _.size(_.filter(modifyData, { type: "BUY" }));
+
+      finalDataSheet.sell = _.size(_.filter(modifyData, { type: "SELL" }));
+      finalDataSheet.trade = finalDataSheet.buy + finalDataSheet.sell;
+      finalDataSheet.openTrade = _.size(
+        _.filter(walletSheet2, (trx) => trx.tokenRemaining > 0)
+      );
+      finalDataSheet.expVsPro =
+        finalDataSheet.profit / finalDataSheet.expenseWithFee;
+
+      finalDataSheet.approved =
+        _.sumBy(_.filter(
+          modifyData,
+          (trx) => trx.type === "Approved"
+        ), "fee");
+
+      finalDataSheet.failed =
+        _.sumBy(
+          _.filter(
+            modifyData,
+            (trx) => trx.type === "Failed"
+          ),
+          "fee"
+        );
+      finalDataSheet.failedCountt = _.countBy(modifyData, 'type')['Failed'] || 0;
 
 
 
 
 
 
-    walletTrxSheet.addRows(modifyData); // Add data in walletTrxSheet
-    walletProfitSheet.addRows(walletSheet2);
-    finalSheet.addRow(finalDataSheet);
+      walletTrxSheet.addRows(modifyData); // Add data in walletTrxSheet
+      walletProfitSheet.addRows(walletSheet2);
+      finalSheet.addRow(finalDataSheet);
 
-    const columnIndex = 10;
+      const columnIndex = 10;
 
-    // Iterate through each row and set the font color of the specified column to red
-    walletTrxSheet.eachRow((row, rowNumber) => {
-      const cell = row.getCell(columnIndex);
-      cell.font = { color: { argb: "FF0000" }, bold: true, size: 13 };
-    });
+      // Iterate through each row and set the font color of the specified column to red
+      walletTrxSheet.eachRow((row, rowNumber) => {
+        const cell = row.getCell(columnIndex);
+        cell.font = { color: { argb: "FF0000" }, bold: true, size: 13 };
+      });
 
-    // Making first line in excel bold
-    walletTrxSheet.getRow(1).eachCell((cell) => {
-      cell.font = { bold: true, size: 13 };
-      cell.fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: "fcd703" },
-      };
-    });
+      // Making first line in excel bold
+      walletTrxSheet.getRow(1).eachCell((cell) => {
+        cell.font = { bold: true, size: 13 };
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "fcd703" },
+        };
+      });
 
-  }
-  csvData(modifyData,walletTrxSheet,walletProfitSheet,finalSheet)
+    }
+    csvData(modifyData, walletTrxSheet, walletProfitSheet, finalSheet)
 
-  if (X != 0) {
-    updatedData = replaceWethOut(modifyData);
- modifyResponse=_.isEqual(_.sortBy(modifyData), _.sortBy(updatedData));
+    if (X != 0) {
+      updatedData = replaceWethOut(modifyData);
+      modifyResponse = _.isEqual(_.sortBy(modifyData), _.sortBy(updatedData));
+      console.log("jjjjj", _.isEqual(_.sortBy(modifyData), _.sortBy(updatedData)),X)
+      if (modifyResponse == false) {
 
-if(modifyResponse==false){
-    csvData(updatedData,mWalletTrxSheet,mWalletProfitSheet,mFinalSheet)}
-}
+        csvData(updatedData, mWalletTrxSheet, mWalletProfitSheet, mFinalSheet)
+      }
+    }
     i++;
     // console.log("i", i);
   } catch (ex) {
