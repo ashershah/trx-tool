@@ -243,8 +243,8 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
                 }
 
                 //if dex buy sell V2  trx
-                else if ((trx?.to != '0xef1c6e67703c7bd7107eed8303fbe6ec2554bf6b' &&  trx?.to != '0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad') && trx.functionName != '') {
-                                  
+                else if ((trx?.to != '0xef1c6e67703c7bd7107eed8303fbe6ec2554bf6b' && trx?.to != '0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad') && trx.functionName != '') {
+
                   let decoded = iface.decodeFunctionData(
                     trx.functionName.substring(0, trx.functionName.indexOf("(")),
                     trx?.input
@@ -351,7 +351,7 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
                 }
 
                 //if dex buy sell V3 universal router  trx
-                else if ((trx?.to == '0xef1c6e67703c7bd7107eed8303fbe6ec2554bf6b'  || trx?.to == '0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad') && trx.functionName != '') {
+                else if ((trx?.to == '0xef1c6e67703c7bd7107eed8303fbe6ec2554bf6b' || trx?.to == '0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad') && trx.functionName != '') {
                   let V3_SWAP_EXACT_IN = "0x00";
                   let V3_SWAP_EXACT_OUT = "0x01";
                   let V2_SWAP_EXACT_IN = "0x08";
@@ -537,7 +537,7 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
 
                             const lastSObject = _.last(logs);
                             const lastBObject = _.last(buyLogs);
-                      
+
                             if (trx?.type == 'SELL') {
                               const filteredArray = _.filter(receipt?.logs, obj =>
                                 obj.address == decodedParams?.path[0] &&
@@ -578,10 +578,10 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
                         }
 
                       } else {
-                         console.log("elseee")
+                        console.log("elseee")
                       }
                     } catch (error) {
-                      throw error
+                      continue
                     }
                   }
                 }
@@ -668,13 +668,35 @@ const writeSheet = async (
   walletTrxSheet,
   walletProfitSheet,
   finalSheet,
+  
+  mWalletTrxSheet,mWalletProfitSheet,mFinalSheet,
   add,
+  X = 0,
   data,
   result = {}
 ) => {
-  console.log("writeSheet");
+   let modifyResponse=false;
+
+  console.log("writeSheet", X);
   try {
     walletTrxSheet.columns = [
+      { header: "Timestamp", key: "timestamp", width: 20 },
+      { header: "Transaction Hash", key: "hash", width: 70 },
+      { header: "Fee (WETH)", key: "fee", width: 20 },
+      { header: "Type", key: "type", width: 15 },
+      { header: "In Token", key: "inToken", width: 20 },
+      { header: "In Amount", key: "sellAmount", width: 20 },
+      { header: "Out Token", key: "outToken", width: 20 },
+      { header: "Out Amount", key: "buyAmount", width: 20 },
+      // { header: "Tax Amount", key: "taxValue", width: 20 },
+      { header: "Approved Token", key: "apptoken", width: 50 },
+      {
+        header: "Error in case of failed transaction",
+        key: "error",
+        width: 50,
+      }
+    ];
+    mWalletTrxSheet.columns = [
       { header: "Timestamp", key: "timestamp", width: 20 },
       { header: "Transaction Hash", key: "hash", width: 70 },
       { header: "Fee (WETH)", key: "fee", width: 20 },
@@ -702,6 +724,17 @@ const writeSheet = async (
       { header: "Fee", key: "fees", width: 15 },
       { header: "Profit ETH", key: "profitEth", width: 15 },
     ];
+    mWalletProfitSheet.columns = [
+      { header: "List Tokens", key: "token", width: 20 },
+      { header: "Amount in token", key: "inAmount", width: 20 },
+      { header: "Amount out token", key: "outAmout", width: 20 },
+      { header: "Token Remaining", key: "tokenRemaining", width: 15 },
+      { header: "WETH In", key: "wethIn", width: 15 },
+      { header: "WETH Out", key: "wethOut", width: 15 },
+      { header: "Avg Sell Price", key: "avgSellPrice", width: 15 },
+      { header: "Fee", key: "fees", width: 15 },
+      { header: "Profit ETH", key: "profitEth", width: 15 },
+    ];
 
     finalSheet.columns = [
       { header: "Wallets", key: "wallets", width: 40 },
@@ -718,11 +751,37 @@ const writeSheet = async (
       { header: "Fee Spent in Failed Txs", key: "failed", width: 20 },
       { header: "Failed #", key: "failedCountt", width: 20 },
     ];
-    // console.log("data", data.length, data.slice(0, 10))
+    mFinalSheet.columns = [
+      { header: "Wallets", key: "wallets", width: 40 },
+      { header: "Expense (no Fee)", key: "expense", width: 20 },
+      { header: " Expenses (with fee)", key: "expenseWithFee", width: 20 },
+      { header: "Profit", key: "profit", width: 20 },
+      { header: "# Buy", key: "buy", width: 20 },
+      { header: "# Sell", key: "sell", width: 20 },
+      { header: "# Trades", key: "trade", width: 20 },
+      { header: "Expense vs. Profit", key: "expVsPro", width: 20 },
+      { header: "Fee", key: "fee", width: 20 },
+      { header: "# Open Trades", key: "openTrade", width: 20 },
+      { header: "Approval Fee Spent", key: "approved", width: 20 },
+      { header: "Fee Spent in Failed Txs", key: "failed", width: 20 },
+      { header: "Failed #", key: "failedCountt", width: 20 },
+    ];
     let modifyData = data;
+    let updatedData=[]
+    const replaceWethOut = (users) => {
+      return _.map(users, (user) => {
+        if (user.buyAmount > X && user.outToken === 'WETH') {
+          return _.assign({}, user, { buyAmount: Number(X)
+          });
+        }
+        return user;
+      });
+    }
+   
 
 
-
+  const csvData=(modifyData,walletTrxSheet,walletProfitSheet,finalSheet)=>{
+  console.log("bjvvgv")
     const uniqueSell = _.uniqBy(modifyData, "outToken").map(
       (trx) => trx.outToken
     );
@@ -788,8 +847,7 @@ const writeSheet = async (
     );
     // console.log("2 walletSheet2",walletSheet2  );
 
-    walletTrxSheet.addRows(modifyData); // Add data in walletTrxSheet
-    walletProfitSheet.addRows(walletSheet2);
+  
     let finalDataSheet = { wallets: `${add}` };
     finalDataSheet.profit = _.sumBy(walletSheet2, "profitEth") - _.sumBy(_.filter(
       modifyData,
@@ -813,6 +871,7 @@ const writeSheet = async (
       ),
       "fee"
     );
+
     finalDataSheet.buy = _.size(_.filter(modifyData, { type: "BUY" }));
 
     finalDataSheet.sell = _.size(_.filter(modifyData, { type: "SELL" }));
@@ -839,7 +898,15 @@ const writeSheet = async (
       );
     finalDataSheet.failedCountt = _.countBy(modifyData, 'type')['Failed'] || 0;
 
+
+
+
+
+
+    walletTrxSheet.addRows(modifyData); // Add data in walletTrxSheet
+    walletProfitSheet.addRows(walletSheet2);
     finalSheet.addRow(finalDataSheet);
+
     const columnIndex = 10;
 
     // Iterate through each row and set the font color of the specified column to red
@@ -857,6 +924,17 @@ const writeSheet = async (
         fgColor: { argb: "fcd703" },
       };
     });
+
+  }
+  csvData(modifyData,walletTrxSheet,walletProfitSheet,finalSheet)
+
+  if (X != 0) {
+    updatedData = replaceWethOut(modifyData);
+ modifyResponse=_.isEqual(_.sortBy(modifyData), _.sortBy(updatedData));
+
+if(modifyResponse==false){
+    csvData(updatedData,mWalletTrxSheet,mWalletProfitSheet,mFinalSheet)}
+}
     i++;
     // console.log("i", i);
   } catch (ex) {
@@ -864,7 +942,7 @@ const writeSheet = async (
     result.ex = ex;
     // console.error(e);
   } finally {
-    return (result = true);
+    return (result = modifyResponse);
   }
 };
 
