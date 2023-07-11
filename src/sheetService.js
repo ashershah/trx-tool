@@ -39,6 +39,9 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
 
 
 
+
+
+
   const abi = [
     {
       "constant": true,
@@ -770,7 +773,9 @@ const writeSheet = async (
     const replaceWethOut = (users) => {
       return _.map(users, (user) => {
         if (user.buyAmount > X && user.outToken === 'WETH') {
+          console.log("amount", user.buyAmount)
           return _.assign({}, user, {
+            sellAmount: ((Number(X) / user.buyAmount) * user.sellAmount),
             buyAmount: Number(X)
           });
         }
@@ -821,8 +826,8 @@ const writeSheet = async (
         );
         const fees = (inAmount == 0) ? 0 : (inTokenFee + outTokenFee);
 
-        const avgSellPrice =
-          wethIn / uniqueSell.filter((trx) => trx !== undefined).length;
+        const avgSellPrice = outAmout == 0 ? 0 : wethIn / outAmout
+
         const profitEth = (inAmount == 0) ? 0 : (wethIn - wethOut - fees);
         tokenRemaining = inAmount - outAmout;
 
@@ -928,9 +933,13 @@ const writeSheet = async (
     csvData(modifyData, walletTrxSheet, walletProfitSheet, finalSheet)
 
     if (X != 0) {
-      updatedData = replaceWethOut(modifyData);
+      try {
+        updatedData = replaceWethOut(modifyData);
+      } catch (error) {
+        console.log("fffff", error)
+      }
       modifyResponse = _.isEqual(_.sortBy(modifyData), _.sortBy(updatedData));
-      console.log("jjjjj", _.isEqual(_.sortBy(modifyData), _.sortBy(updatedData)),X)
+      console.log("jjjjj", _.isEqual(_.sortBy(modifyData), _.sortBy(updatedData)), X)
       if (modifyResponse == false) {
 
         csvData(updatedData, mWalletTrxSheet, mWalletProfitSheet, mFinalSheet)

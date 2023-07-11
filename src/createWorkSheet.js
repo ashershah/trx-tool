@@ -29,12 +29,9 @@ const createWorkSheet = async (req, res, next) => {
 
        workbook.eachSheet((worksheet, sheetId) => {
             const sheetName = worksheet.name;
-            console.log("sheetId", sheetId,add);
 
             const sheetData = workbook.getWorksheet(sheetName).getSheetValues();
             if ((!X || X == 0 || res) && sheetName.toLowerCase().startsWith('modify') && sheetName.endsWith(add.slice(-6))) {
-              console.log("emptyy", sheetId);
-
               worksheet.state = 'hidden';
             }
 
