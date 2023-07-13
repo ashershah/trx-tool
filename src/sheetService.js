@@ -4,19 +4,15 @@ const _ = require("lodash");
 const { ethers, providers, Wallet } = require("ethers");
 const { get } = require("http");
 
-
-
-
-// keys
-
-// Etherscan api
+// Etherscan api key
 const apiKey = "M9TKZC1D3W8WPPPYD1TP41DTKITVNPMNTG";
 
 
 
-
+//service sheeet to get data from etherscan and manipulate accrording to condition
 const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/v3/ccd672837bb643d7a059effc74ae25cc', result = {}) => {
 
+  //abi interface for v2 transaction 
   const iface = new ethers.utils.Interface([
     "function swapExactETHForTokens(uint256 amountOutMin, address[] path, address to, uint256 deadline)",
     "function swapETHForExactTokens(uint amountOut, address[] calldata path, address to, uint deadline)",
@@ -32,16 +28,27 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
     "function execute(bytes commands,bytes[] inputs,uint256 deadline)",
     "function approve(address _spender, uint256 _value)",
   ]);
+
+  //abi interface for v3/universal router transaction 
+  let v3iface = new ethers.utils.Interface(["function execute(bytes commands,bytes[] inputs,uint256 deadline)"]);
+
+  //v2 log interface 
   const logIface = new ethers.utils.Interface(["event Swap( address indexed sender, uint amount0In, uint amount1In, uint amount0Out, uint amount1Out, address indexed to)"]);
+
+  //v3 log interface
   const logIfaceV3 = new ethers.utils.Interface(["event Swap( address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)"]);
+
+  //to get buy interface without tax fee
   const buyLogIface = new ethers.utils.Interface(["event Transfer(address indexed from, address indexed to, uint256 value)"]);
+
+  //provider for decode transaction 
   const provider = new ethers.providers.JsonRpcProvider(`${key}`);
 
 
 
 
 
-
+  //abi to get token and decimal
   const abi = [
     {
       "constant": true,
@@ -75,6 +82,36 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
     }
   ];
 
+
+  //v2 facrory abi to get pair address 
+  const factoryAbi = [
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "tokenA",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "tokenB",
+          "type": "address"
+        }
+      ],
+      "name": "getPair",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "pair",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ];
+
+  //v3facrory abi to get pair address 
   const factoryAbiV3 = [
 
     {
@@ -109,32 +146,8 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
 
   ];
 
-  const factoryAbi = [
-    {
-      "inputs": [
-        {
-          "internalType": "address",
-          "name": "tokenA",
-          "type": "address"
-        },
-        {
-          "internalType": "address",
-          "name": "tokenB",
-          "type": "address"
-        }
-      ],
-      "name": "getPair",
-      "outputs": [
-        {
-          "internalType": "address",
-          "name": "pair",
-          "type": "address"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    }
-  ];
+
+  // abi for getting  tax fee for transaction 
   const transferAbi = new ethers.utils.Interface([
     {
       "anonymous": false,
@@ -160,6 +173,8 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
     }
   ]);
 
+
+  //factory contract for pair address
   let factoryCntract = new ethers.Contract("0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f", factoryAbi, provider);
   let factoryCntractV3 = new ethers.Contract("0x1F98431c8aD98523631AE4a59f267346ea31F984", factoryAbiV3, provider);
 
@@ -179,7 +194,6 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
       const startTimestamp = moment(subtractedDate).unix();
       const endTimestamp = moment(addDate).unix();
 
-
       const startResponse = await axios.get(
         `https://api.etherscan.io/api?module=block&action=getblocknobytime&timestamp=${startTimestamp}&closest=before&apikey=${apiKey}`
       );
@@ -188,7 +202,7 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
       );
       const startBlock = startResponse?.data?.result;
       const endBlock = endResponse?.data?.result;
-
+      // if startBlock && endBlock exist then call final etherscan api to get wallet trx during required time period
       if (startBlock && endBlock) {
         try {
           let response = await axios.get(
@@ -198,17 +212,13 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
           //if data found
           if (response?.data?.result?.length) {
 
-
-            //get data by dates
+            //get data by dates in case of extra blocks
             const getDateData = _.filter(response?.data?.result, obj => {
               const date = moment.unix(obj.timeStamp).utc().format(
                 "YYYY-MM-DD"
               );
-
               return `${date}` >= JSON.parse(from) && `${date}` <= JSON.parse(to);
-
             });
-
 
             //trx modify and find trx type 
             const decodeTransaction = async (trx) => {
@@ -247,7 +257,6 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
 
                 //if dex buy sell V2  trx
                 else if ((trx?.to != '0xef1c6e67703c7bd7107eed8303fbe6ec2554bf6b' && trx?.to != '0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad') && trx.functionName != '') {
-
                   let decoded = iface.decodeFunctionData(
                     trx.functionName.substring(0, trx.functionName.indexOf("(")),
                     trx?.input
@@ -261,7 +270,6 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
                     provider
                   );
                   let inTokenContract = new ethers.Contract(decoded?.path[1], abi, provider);
-
                   let outDecimal = 18;
                   let inDecimal = 18;
 
@@ -282,13 +290,9 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
 
                   // console.log("decoded", decoded.path)
 
-
-
-
                   //trx logs get and decode
                   try {
                     const pairAddress = await factoryCntract.getPair(decoded?.path[0], decoded?.path[1]);
-
                     const receipt = await provider.getTransactionReceipt(trx.hash);
                     const logs = receipt.logs.filter(log => log?.topics[0] == '0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822');
                     const buyLogs = _.filter(receipt?.logs, obj =>
@@ -303,51 +307,37 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
                     let taxValue = 0;
                     try {
                       if (trx?.type == 'SELL') {
-
-
                         const filteredArray = _.filter(receipt?.logs, obj =>
                           obj.address == decoded?.path[0] &&
                           obj.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' &&
                           ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[1]) == decoded?.to &&
                           ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[2]) != pairAddress
                         );
-
                         if (filteredArray.length > 0) {
                           let tax = transferAbi.parseLog(filteredArray[0]);
                           taxValue = tax.args.value.toString() / 10 ** outDecimal
                           trx.taxValue = tax.args.value.toString() / 10 ** outDecimal || 'no'
                         }
-
-
                       }
-
-
                     } catch (error) {
                       // console.log("factoryv errorrr", error)
                     }
                     let decodedLog = logIface.parseLog(lastSObject);
 
+                    //set inAmount and out Amount 
                     if (trx?.type == 'SELL') {
                       trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() / 10 ** outDecimal + taxValue : ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal + taxValue;
                       trx.sellAmount = ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() / 10 ** inDecimal : ethers.BigNumber.from(decodedLog?.args?.amount0Out?._hex).toString() / 10 ** inDecimal;
-
                     }
                     if (trx?.type == 'BUY') {
-
-
                       let buyTransfer = buyLogIface.parseLog(lastBObject);
                       trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0Out?._hex).toString() == '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() / 10 ** outDecimal : ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() == '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal : "";
                       trx.sellAmount = ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() ? ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() / 10 ** inDecimal : "nill";
-
                     }
                   } catch (error) {
                     console.log("trx logs get and decode", trx.hash, error)
-
                     throw error
-
                   }
-
-
                   trx.inToken = await inTokenContract.symbol() || '';
                   const transactionFee = parseInt(trx?.gasPrice) * parseInt(trx?.gasUsed);
                   trx.fee = transactionFee / 10 ** 18
@@ -355,6 +345,8 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
 
                 //if dex buy sell V3 universal router  trx
                 else if ((trx?.to == '0xef1c6e67703c7bd7107eed8303fbe6ec2554bf6b' || trx?.to == '0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad') && trx.functionName != '') {
+
+                  //comands code 
                   let V3_SWAP_EXACT_IN = "0x00";
                   let V3_SWAP_EXACT_OUT = "0x01";
                   let V2_SWAP_EXACT_IN = "0x08";
@@ -363,31 +355,27 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
                   let inDecimal = 18;
                   let taxValue = 0;
 
-
-                  console.log("v3333")
-                  let v3iface = new ethers.utils.Interface(["function execute(bytes commands,bytes[] inputs,uint256 deadline)"]);
                   let decoded = v3iface.decodeFunctionData(
                     'execute',
                     trx?.input
                   );
+
                   const splitCommands = decoded?.commands.match(/.{1,2}/g);
                   for (let i = 1; i < splitCommands.length; i++) {
                     try {
-                      if (`${splitCommands[0]}${splitCommands[i]}` == V3_SWAP_EXACT_IN || `${splitCommands[0]}${splitCommands[i]}` == V3_SWAP_EXACT_OUT) {
 
+
+                      //if commands is v3 router
+                      if (`${splitCommands[0]}${splitCommands[i]}` == V3_SWAP_EXACT_IN || `${splitCommands[0]}${splitCommands[i]}` == V3_SWAP_EXACT_OUT) {
                         trx.timestamp = moment.unix(trx.timeStamp).utc().format(
                           "YYYY-MM-DD hh:mm:ss"
                         );
+
                         let decodedParams = {};
                         try {
-                          //check V3 In/Out
                           if (`${splitCommands[0]}${splitCommands[i]}` == V3_SWAP_EXACT_IN) {
-                            console.log("V3_SWAP_EXACT_IN", trx.hash)
-
                             decodedParams = ethers.utils.defaultAbiCoder.decode(['address recipient', 'uint256 amountIn', 'uint256 amountOutMin', 'bytes memory path', 'bool payerIsUser'], decoded?.inputs[i - 1]);
                           } else {
-                            console.log("V3_SWAP_EXACT_OUT", trx.hash)
-
                             decodedParams = ethers.utils.defaultAbiCoder.decode(['address recipient', 'uint256 amountOut', 'uint256 amountInMax', 'bytes memory path', 'bool payerIsUser'], decoded?.inputs[i - 1]);
                           }
                           let to = (decodedParams?.recipient == 0x0000000000000000000000000000000000000001) || (decodedParams?.recipient == 0x0000000000000000000000000000000000000002) ? trx?.from : decodedParams?.recipient
@@ -439,9 +427,8 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
 
                             const lastSObject = _.last(logs);
                             const lastBObject = _.last(buyLogs);
+
                             if (trx?.type == 'SELL') {
-
-
                               const filteredArray = _.filter(receipt?.logs, obj =>
                                 obj.address == path0 &&
                                 obj.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' &&
@@ -449,24 +436,22 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
                                 ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[2]) != pairAddress
                               );
 
+                              //calculate tax fee
                               if (filteredArray.length > 0) {
                                 let tax = transferAbi.parseLog(filteredArray[0]);
                                 taxValue = tax.args.value.toString() / 10 ** outDecimal
                                 trx.taxValue = tax.args.value.toString() / 10 ** outDecimal || 'no'
                               }
-
-
                             }
+
                             let decodedLog = logIfaceV3.parseLog(lastSObject);
                             if (trx?.type == 'SELL') {
                               // + out - in
                               trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0?._hex).toString() > '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0?._hex).toString() / 10 ** outDecimal + taxValue : ethers.BigNumber.from(decodedLog?.args?.amount1?._hex).toString() / 10 ** outDecimal + taxValue || 0;
                               trx.sellAmount = ethers.BigNumber.from(decodedLog?.args?.amount0?._hex).toString() > '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1?._hex).abs().toString() / 10 ** inDecimal : ethers.BigNumber.from(decodedLog?.args?.amount0?._hex).abs().toString() / 10 ** inDecimal || 0;
-
                             }
                             if (trx?.type == 'BUY') {
                               let buyTransfer = buyLogIface.parseLog(lastBObject);
-
                               trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0?._hex).toString() < '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1?._hex).toString() / 10 ** outDecimal : ethers.BigNumber.from(decodedLog?.args?.amount0?._hex).toString() / 10 ** outDecimal || 0;
                               trx.sellAmount = ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() ? ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() / 10 ** inDecimal : "nill" || 0;
                             }
@@ -477,33 +462,23 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
                         } catch (error) {
                           console.log("Error V3_SWAP_EXACT_IN", error)
                         }
-
-
-
-
-
                       }
+
+                      //if v2 transaction but in old universal router
                       else if (`${splitCommands[0]}${splitCommands[i]}` == V2_SWAP_EXACT_IN || `${splitCommands[0]}${splitCommands[i]}` == V2_SWAP_EXACT_OUT) {
-                        // console.log("V2_SWAP_EXACT_IN", trx.hash)
-
-
                         trx.timestamp = moment.unix(trx.timeStamp).utc().format(
                           "YYYY-MM-DD hh:mm:ss"
                         );
-
                         try {
                           let decodedParams = {};
-
                           if (`${splitCommands[0]}${splitCommands[i]}` == V2_SWAP_EXACT_IN) {
                             // console.log("V2_SWAP_EXACT_IN", trx.hash)
-
                             decodedParams = ethers.utils.defaultAbiCoder.decode(['address recipient', 'uint256 amountIn', 'uint256 amountOutMin', 'address[] memory path', 'bool payerIsUser'], decoded?.inputs[i - 1]);
-
                           } else {
-                            console.log("V2_SWAP_EXACT_OUT", trx.hash)
-
+                            // console.log("V2_SWAP_EXACT_OUT", trx.hash)
                             decodedParams = ethers.utils.defaultAbiCoder.decode(['address recipient', 'uint256 amountOut', 'uint256 amountInMax', 'address[] memory path', 'bool payerIsUser'], decoded?.inputs[i - 1]);
                           }
+
                           let to = (decodedParams?.recipient == 0x0000000000000000000000000000000000000001) || (decodedParams?.recipient == 0x0000000000000000000000000000000000000002) ? trx?.from : decodedParams?.recipient
                           let outTokenContract = new ethers.Contract(
                             decodedParams?.path[0],
@@ -515,7 +490,6 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
                           outDecimal = await outTokenContract.decimals();
                           inDecimal = await inTokenContract.decimals();
                           trx.outToken = await outTokenContract.symbol() || '';
-
                           trx.inToken = await inTokenContract.symbol() || '';
 
                           if (_.includes(['WETH', 'USDT', 'USDC'], trx?.outToken)) {
@@ -523,10 +497,9 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
                           } else {
                             trx.type = 'SELL'
                           }
-
                           try {
-                            const pairAddress = await factoryCntract.getPair(decodedParams?.path[0], decodedParams?.path[1]);
 
+                            const pairAddress = await factoryCntract.getPair(decodedParams?.path[0], decodedParams?.path[1]);
                             const receipt = await provider.getTransactionReceipt(trx.hash);
                             const logs = receipt.logs.filter(log => log?.topics[0] == '0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822');
                             const buyLogs = _.filter(receipt?.logs, obj =>
@@ -536,7 +509,6 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
                               &&
                               ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[2])[0].toLowerCase() == to.toLowerCase()
                             );
-
 
                             const lastSObject = _.last(logs);
                             const lastBObject = _.last(buyLogs);
@@ -548,27 +520,27 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
                                 ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[1])[0].toLowerCase() == to &&
                                 ethers.utils.defaultAbiCoder.decode(["address"], obj.topics[2]) != pairAddress
                               );
-
+                              //tax fee for sell transaction
                               if (filteredArray.length > 0) {
                                 let tax = transferAbi.parseLog(filteredArray[0]);
                                 taxValue = tax.args.value.toString() / 10 ** outDecimal
                                 trx.taxValue = tax.args.value.toString() / 10 ** outDecimal || 'no'
                               }
-
-
                             }
+
                             let decodedLog = logIface.parseLog(lastSObject);
+
                             if (trx?.type == 'SELL') {
                               trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() / 10 ** outDecimal + taxValue : ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal + taxValue;
                               trx.sellAmount = ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() != '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() / 10 ** inDecimal : ethers.BigNumber.from(decodedLog?.args?.amount0Out?._hex).toString() / 10 ** inDecimal;
-
                             }
+
                             if (trx?.type == 'BUY') {
                               let buyTransfer = buyLogIface.parseLog(lastBObject);
                               trx.buyAmount = ethers.BigNumber.from(decodedLog?.args?.amount0Out?._hex).toString() == '0' ? ethers.BigNumber.from(decodedLog?.args?.amount0In?._hex).toString() / 10 ** outDecimal : ethers.BigNumber.from(decodedLog?.args?.amount1Out?._hex).toString() == '0' ? ethers.BigNumber.from(decodedLog?.args?.amount1In?._hex).toString() / 10 ** outDecimal : "";
                               trx.sellAmount = ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() ? ethers.BigNumber.from(buyTransfer?.args?.value?._hex).toString() / 10 ** inDecimal : "nill";
-
                             }
+
                             const transactionFee = parseInt(trx?.gasPrice) * parseInt(trx?.gasUsed);
                             trx.fee = transactionFee / 10 ** 18
 
@@ -580,7 +552,7 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
                         }
 
                       } else {
-                        console.log("elseee")
+                        // console.log("elseee")
                       }
                     } catch (error) {
                       continue
@@ -600,19 +572,14 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
             const getDecodeTransactions = async (transactions) => {
               const batchSize = 80; // Number of transactions to process in each batch
               const batches = [];
-
               for (let i = 0; i < transactions.length; i += batchSize) {
                 const batch = transactions.slice(i, i + batchSize);
                 batches.push(batch);
               }
-
               const decodedTransactions = [];
-
               for (let i = 0; i < batches.length; i++) {
                 const batch = batches[i];
                 const promises = batch.map(transaction => decodeTransaction(transaction));
-
-
                 try {
                   const decodedBatch = await Promise.all(promises);
                   decodedTransactions.push(...decodedBatch);
@@ -620,27 +587,17 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
                   console.error('Error decoding transactions:', error);
                   throw error;
                 }
-
-
               }
-
               return decodedTransactions;
             }
-
-
-
-
             //decode  trx 
             let decodeTransactions = await getDecodeTransactions(getDateData);
             result.data = _.reject(decodeTransactions, obj => {
               return _.isNull(obj) || _.isEmpty(obj.functionName);
             });
-
-
           } else {
             result.error = response?.data?.message || "Not Found";
           }
-
         } catch (error) {
           console.log("trx list error", error);
         }
@@ -665,22 +622,24 @@ const sheetService = async (address, from, to, key = 'https://mainnet.infura.io/
 
 
 
-
+//write sheeet to map data from Service sheet to excel file and contains all formula
 const writeSheet = async (
   walletTrxSheet,
   walletProfitSheet,
   finalSheet,
-
-  mWalletTrxSheet, mWalletProfitSheet, mFinalSheet,
+  mWalletTrxSheet,
+  mWalletProfitSheet,
+  mFinalSheet,
   add,
   X = 0,
   data,
   result = {}
 ) => {
-  let modifyResponse = false;
 
-  console.log("writeSheet", X);
+  let modifyResponse = false;
   try {
+
+    //columns heading for all TRX,TOK,Final sheets as well as modified-sheets(start with m letter)
     walletTrxSheet.columns = [
       { header: "Timestamp", key: "timestamp", width: 20 },
       { header: "Transaction Hash", key: "hash", width: 70 },
@@ -691,7 +650,7 @@ const writeSheet = async (
       { header: "Out Token", key: "outToken", width: 20 },
       { header: "Out Amount", key: "buyAmount", width: 20 },
       // { header: "Tax Amount", key: "taxValue", width: 20 },
-      { header: "Approved Token", key: "apptoken", width: 50 },
+      { header: "Approved Token", key: "apptoken", width: 15 },
       {
         header: "Error in case of failed transaction",
         key: "error",
@@ -708,7 +667,7 @@ const writeSheet = async (
       { header: "Out Token", key: "outToken", width: 20 },
       { header: "Out Amount", key: "buyAmount", width: 20 },
       // { header: "Tax Amount", key: "taxValue", width: 20 },
-      { header: "Approved Token", key: "apptoken", width: 50 },
+      { header: "Approved Token", key: "apptoken", width: 15 },
       {
         header: "Error in case of failed transaction",
         key: "error",
@@ -725,6 +684,7 @@ const writeSheet = async (
       { header: "Avg Sell Price", key: "avgSellPrice", width: 15 },
       { header: "Fee", key: "fees", width: 15 },
       { header: "Profit ETH", key: "profitEth", width: 15 },
+      { header: "% Sold", key: "percentSold", width: 30 },
     ];
     mWalletProfitSheet.columns = [
       { header: "List Tokens", key: "token", width: 20 },
@@ -736,8 +696,9 @@ const writeSheet = async (
       { header: "Avg Sell Price", key: "avgSellPrice", width: 15 },
       { header: "Fee", key: "fees", width: 15 },
       { header: "Profit ETH", key: "profitEth", width: 15 },
-    ];
+      { header: "% Sold", key: "percentSold", width: 30 },
 
+    ];
     finalSheet.columns = [
       { header: "Wallets", key: "wallets", width: 40 },
       { header: "Expense (no Fee)", key: "expense", width: 20 },
@@ -768,12 +729,16 @@ const writeSheet = async (
       { header: "Fee Spent in Failed Txs", key: "failed", width: 20 },
       { header: "Failed #", key: "failedCountt", width: 20 },
     ];
+
+    //Data for token for TXs----- sheet
     let modifyData = data;
-    let updatedData = []
+
+    let updatedData = [];
+
+    //function for replacing outAmount(weth token) with X value
     const replaceWethOut = (users) => {
       return _.map(users, (user) => {
         if (user.buyAmount > X && user.outToken === 'WETH') {
-          console.log("amount", user.buyAmount)
           return _.assign({}, user, {
             sellAmount: ((Number(X) / user.buyAmount) * user.sellAmount),
             buyAmount: Number(X)
@@ -784,8 +749,13 @@ const writeSheet = async (
     }
 
 
+    let originalPercentage = [];
 
-    const csvData = (modifyData, walletTrxSheet, walletProfitSheet, finalSheet) => {
+    // data calculate function
+    const csvData = (modifyData, walletTrxSheet, walletProfitSheet, finalSheet, type) => {
+
+
+      //get unique token for TOK----- sheet
       const uniqueSell = _.uniqBy(modifyData, "outToken").map(
         (trx) => trx.outToken
       );
@@ -795,17 +765,18 @@ const writeSheet = async (
         (trx) => trx !== undefined
       );
 
-      let walletSheet2 = finalTokens.map((token) => {
+      //Data for token for TOK----- sheet
+      let walletSheet2 = finalTokens.map((token, index) => {
         const inAmount = _.sumBy(
           _.filter(modifyData, { inToken: token }),
           "sellAmount"
         );
 
-        const outAmout = _.sumBy(
+        let outAmout = _.sumBy(
           _.filter(modifyData, { outToken: token }),
           "buyAmount"
         );
-        const wethIn = _.sumBy(
+        let wethIn = _.sumBy(
           _.filter(modifyData, { inToken: "WETH", outToken: token }),
           "sellAmount"
         );
@@ -827,10 +798,23 @@ const writeSheet = async (
         const fees = (inAmount == 0) ? 0 : (inTokenFee + outTokenFee);
 
         const avgSellPrice = outAmout == 0 ? 0 : wethIn / outAmout
-
         const profitEth = (inAmount == 0) ? 0 : (wethIn - wethOut - fees);
         tokenRemaining = inAmount - outAmout;
+        let percentSold = (inAmount == 0) ? 0 : (outAmout / inAmount) * 100
 
+        //memorize original data sold percentage for modified Tok---- sheet
+        if (type == '!x') {
+          originalPercentage.push(percentSold)
+        }
+
+        //change data if there X value 
+        if (type == 'x') {
+          outAmout = (inAmount * originalPercentage[index]) / 100;
+          wethIn = outAmout * avgSellPrice;
+          percentSold = (inAmount == 0) ? 0 : (outAmout / inAmount) * 100
+        }
+
+        percentSold = `${percentSold} %`
         return {
           token: token,
           inAmount,
@@ -841,17 +825,16 @@ const writeSheet = async (
           avgSellPrice,
           fees,
           profitEth,
+          percentSold
         };
       });
 
-      // console.log("1 walletSheet2",walletSheet2  );
-
+      //exclude stable coins 
       walletSheet2 = _.reject(walletSheet2, (obj) =>
         _.includes(["WETH", "USDT", "USDC"], obj.token)
       );
-      // console.log("2 walletSheet2",walletSheet2  );
 
-
+      //Data for token for final sheet
       let finalDataSheet = { wallets: `${add}` };
       finalDataSheet.profit = _.sumBy(walletSheet2, "profitEth") - _.sumBy(_.filter(
         modifyData,
@@ -877,43 +860,37 @@ const writeSheet = async (
       );
 
       finalDataSheet.buy = _.size(_.filter(modifyData, { type: "BUY" }));
-
       finalDataSheet.sell = _.size(_.filter(modifyData, { type: "SELL" }));
       finalDataSheet.trade = finalDataSheet.buy + finalDataSheet.sell;
       finalDataSheet.openTrade = _.size(
         _.filter(walletSheet2, (trx) => trx.tokenRemaining > 0)
       );
-      finalDataSheet.expVsPro =
-        finalDataSheet.profit / finalDataSheet.expenseWithFee;
+      finalDataSheet.expVsPro = finalDataSheet.profit / finalDataSheet.expenseWithFee;
+      finalDataSheet.approved = _.sumBy(_.filter(
+        modifyData,
+        (trx) => trx.type === "Approved"
+      ), "fee");
 
-      finalDataSheet.approved =
-        _.sumBy(_.filter(
+      finalDataSheet.failed = _.sumBy(
+        _.filter(
           modifyData,
-          (trx) => trx.type === "Approved"
-        ), "fee");
-
-      finalDataSheet.failed =
-        _.sumBy(
-          _.filter(
-            modifyData,
-            (trx) => trx.type === "Failed"
-          ),
-          "fee"
-        );
+          (trx) => trx.type === "Failed"
+        ),
+        "fee"
+      );
       finalDataSheet.failedCountt = _.countBy(modifyData, 'type')['Failed'] || 0;
 
 
 
 
-
-
-      walletTrxSheet.addRows(modifyData); // Add data in walletTrxSheet
+      // Add above calculated data in sheet 
+      walletTrxSheet.addRows(modifyData);
       walletProfitSheet.addRows(walletSheet2);
       finalSheet.addRow(finalDataSheet);
 
       const columnIndex = 10;
 
-      // Iterate through each row and set the font color of the specified column to red
+      // Iterate through each row and set the font color of the error message column to red
       walletTrxSheet.eachRow((row, rowNumber) => {
         const cell = row.getCell(columnIndex);
         cell.font = { color: { argb: "FF0000" }, bold: true, size: 13 };
@@ -928,29 +905,30 @@ const writeSheet = async (
           fgColor: { argb: "fcd703" },
         };
       });
-
     }
-    csvData(modifyData, walletTrxSheet, walletProfitSheet, finalSheet)
 
+    //call csvData funtion with original data got by service sheet
+    csvData(modifyData, walletTrxSheet, walletProfitSheet, finalSheet, '!x');
+
+
+    //call csvData funtion with original data got by service sheet
     if (X != 0) {
       try {
         updatedData = replaceWethOut(modifyData);
       } catch (error) {
-        console.log("fffff", error)
+        console.log("Error replaceWethOut", error)
       }
-      modifyResponse = _.isEqual(_.sortBy(modifyData), _.sortBy(updatedData));
-      console.log("jjjjj", _.isEqual(_.sortBy(modifyData), _.sortBy(updatedData)), X)
-      if (modifyResponse == false) {
 
-        csvData(updatedData, mWalletTrxSheet, mWalletProfitSheet, mFinalSheet)
+      //check is X value effect data or not
+      modifyResponse = _.isEqual(_.sortBy(modifyData), _.sortBy(updatedData));
+      if (modifyResponse == false) {
+        csvData(updatedData, mWalletTrxSheet, mWalletProfitSheet, mFinalSheet, 'x')
       }
     }
     i++;
-    // console.log("i", i);
   } catch (ex) {
     throw ex;
     result.ex = ex;
-    // console.error(e);
   } finally {
     return (result = modifyResponse);
   }
